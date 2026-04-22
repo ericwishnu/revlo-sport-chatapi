@@ -982,29 +982,163 @@ export async function getOrderStatus(customerPhone: string): Promise<string> {
   )
 }
 
+function getPaymentStatusLabel(status: 'UNPAID' | 'PAID' | 'CANCELLED'): string {
+  const map: Record<'UNPAID' | 'PAID' | 'CANCELLED', string> = {
+    UNPAID: 'Menunggu Pembayaran',
+    PAID: 'Lunas',
+    CANCELLED: 'Dibatalkan',
+  }
+  return map[status]
+}
+
+function getOrderStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    AWAITING_PAYMENT: 'Menunggu Pembayaran',
+    AWAITING_VERIFICATION: 'Menunggu Verifikasi Pembayaran',
+    PAYMENT_CONFIRMED: 'Pembayaran Terkonfirmasi',
+    PROCESSING: 'Sedang Diproses',
+    COMPLETED: 'Selesai',
+  }
+  return map[status] ?? status
+}
+
+function extractPaymentMethodFromNotes(notes: string | null | undefined): string | null {
+  if (!notes) return null
+  const matched = notes.match(/Pembayaran via:\s*([^|\n]+)/i)
+  return matched?.[1]?.trim() || null
+}
+
+function formatInvoiceDate(d: Date): string {
+  return d.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
 export async function getLatestInvoiceText(customerPhone: string): Promise<string> {
-  const session = await db.whatsAppOrderSession.findFirst({
+  let invoice = await db.invoice.findFirst({
     where: {
       customerPhone,
-      status: 'CONFIRMED',
-      invoiceId: { not: null },
     },
-    orderBy: { updatedAt: 'desc' },
+    include: {
+      items: {
+        include: {
+          variant: {
+            select: { name: true },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
   })
 
-  if (!session?.invoiceId) {
-    return 'Belum ada invoice untuk nomor ini.'
+  if (!invoice) {
+    const session = await db.whatsAppOrderSession.findFirst({
+      where: {
+        customerPhone,
+        status: 'CONFIRMED',
+        invoiceId: { not: null },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+
+    if (!session?.invoiceId) {
+      return 'Belum ada invoice untuk nomor ini.'
+    }
+
+    invoice = await db.invoice.findUnique({
+      where: { id: session.invoiceId },
+      include: {
+        items: {
+          include: {
+            variant: {
+              select: { name: true },
+            },
+          },
+        },
+      },
+    })
   }
 
-  const invoice = await db.invoice.findUnique({ where: { id: session.invoiceId } })
   if (!invoice) {
     return 'Belum ada invoice untuk nomor ini.'
   }
 
+  const session = await db.whatsAppOrderSession.findFirst({
+    where: {
+      customerPhone,
+      status: 'CONFIRMED',
+      invoiceId: invoice.id,
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
   const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
   const storeName = settings?.storeName ?? 'Revlo Sport'
   const bankAccounts = parseBankAccounts(settings?.bankAccountsJson)
-  const payload = session.payloadJson as OrderPayload
+  const payload = (session?.payloadJson ?? {}) as OrderPayload
 
-  return buildInvoiceText(invoice.invoiceNumber, customerPhone, payload, storeName, bankAccounts)
+  const paymentMethod =
+    payload.paymentMethod ??
+    extractPaymentMethodFromNotes(invoice.notes) ??
+    '-'
+  const shippingMethodName = payload.shippingMethodName ?? 'Pengiriman'
+  const shippingAddress = payload.shippingAddress ?? '-'
+  const paymentStatusLabel = getPaymentStatusLabel(invoice.paymentStatus)
+  const orderStatusLabel = getOrderStatusLabel(invoice.orderStatus)
+
+  const itemLines = invoice.items.map((item: any) => {
+    const variantSuffix =
+      item.variant?.name && !item.name.toLowerCase().includes(item.variant.name.toLowerCase())
+        ? ` - ${item.variant.name}`
+        : ''
+    return `• ${item.name}${variantSuffix} x${item.quantity}\n  = ${formatCurrency(item.lineTotal)}`
+  })
+
+  const transferAccount = resolveTransferAccount(paymentMethod, bankAccounts)
+  const showTransferInstruction =
+    Boolean(transferAccount) &&
+    invoice.paymentStatus === 'UNPAID' &&
+    invoice.orderStatus === 'AWAITING_PAYMENT'
+
+  const transferLines = showTransferInstruction && transferAccount
+    ? [
+        '',
+        'Tujuan Transfer:',
+        `Bank: ${transferAccount.bankName}`,
+        `No. Rekening: ${transferAccount.accountNumber}`,
+        `Atas Nama: ${transferAccount.accountHolder}`,
+        '',
+        'Jika sudah transfer, balas:',
+        '*SUDAH TRANSFER*',
+      ]
+    : []
+
+  return [
+    '━━━━━━━━━━━━━━━━━━━━━━━',
+    `DETAIL INVOICE ${storeName.toUpperCase()}`,
+    '━━━━━━━━━━━━━━━━━━━━━━━',
+    `No. Invoice: ${invoice.invoiceNumber}`,
+    `Tanggal: ${formatInvoiceDate(invoice.createdAt)}`,
+    '',
+    `Nama: ${invoice.customerName}`,
+    `No. HP: ${invoice.customerPhone ?? customerPhone}`,
+    `Alamat: ${shippingAddress}`,
+    '',
+    'DETAIL PESANAN:',
+    ...(itemLines.length > 0 ? itemLines : ['• -']),
+    '',
+    `Subtotal: ${formatCurrency(invoice.subtotal)}`,
+    `Ongkir (${shippingMethodName}): ${formatCurrency(invoice.shippingCost)}`,
+    `TOTAL: ${formatCurrency(invoice.totalAmount)}`,
+    '',
+    `Metode Pembayaran: ${paymentMethod}`,
+    `Status Pembayaran: ${paymentStatusLabel}`,
+    `Status Pesanan: ${orderStatusLabel}`,
+    ...transferLines,
+    '',
+    'Ini adalah invoice terbaru Anda.',
+    '━━━━━━━━━━━━━━━━━━━━━━━',
+  ].join('\n')
 }

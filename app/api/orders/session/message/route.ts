@@ -16,7 +16,14 @@ const GLOBAL_COMMANDS = {
   MENU: ['menu', 'menu utama', 'home', 'mulai lagi'],
   CANCEL_ORDER: ['batal pesanan'],
   ORDER_STATUS: ['status pesanan', 'cek status', 'status transaksi'],
-  CHECK_INVOICE: ['cek invoice', 'invoice saya', 'lihat invoice'],
+  CHECK_INVOICE: [
+    'cek invoice',
+    'invoice saya',
+    'lihat invoice',
+    'cek riwayat transaksi',
+    'riwayat transaksi',
+    'riwayat invoice',
+  ],
   // Payment confirmation uses includes() — customer may append context
   PAYMENT_CONFIRM: ['sudah transfer', 'sudah bayar', 'konfirmasi pembayaran', 'saya sudah transfer'],
 } as const
@@ -41,6 +48,19 @@ function detectGlobalCommand(message: string): GlobalCommand | null {
   return null
 }
 
+async function hasActiveOrderSession(customerPhone: string): Promise<boolean> {
+  const activeSession = await db.whatsAppOrderSession.findFirst({
+    where: {
+      customerPhone,
+      status: { in: ['DRAFT', 'AWAITING_CONFIRMATION'] },
+      expiresAt: { gt: new Date() },
+    },
+    select: { id: true },
+  })
+
+  return Boolean(activeSession)
+}
+
 // Accept either sessionId or customerPhone to look up the active session
 const schema = z.object({
   sessionId: z.string().optional(),
@@ -55,18 +75,40 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = schema.parse(body)
 
+    let customerPhone = data.customerPhone
+    if (!customerPhone && data.sessionId) {
+      const session = await db.whatsAppOrderSession.findUnique({
+        where: { id: data.sessionId },
+        select: { customerPhone: true },
+      })
+      customerPhone = session?.customerPhone
+    }
+
+    // Menu 7 = cek riwayat transaksi/invoice terbaru.
+    // Only handled as global shortcut when customer is not in active order flow.
+    const normalizedMessage = data.message.toLowerCase().trim()
+    const isMenuSeven = normalizedMessage === '7' || normalizedMessage === 'menu 7'
+    if (isMenuSeven && customerPhone) {
+      const hasActive = await hasActiveOrderSession(customerPhone)
+      if (!hasActive) {
+        const invoiceText = await getLatestInvoiceText(customerPhone)
+        return NextResponse.json(
+          {
+            sessionId: data.sessionId ?? null,
+            customerPhone,
+            status: 'collecting',
+            currentStep: 'info',
+            reply: invoiceText,
+          },
+          { status: 200 }
+        )
+      }
+    }
+
     const globalCmd = detectGlobalCommand(data.message)
 
     if (globalCmd) {
       // Resolve customerPhone — required for all global commands
-      let customerPhone = data.customerPhone
-      if (!customerPhone && data.sessionId) {
-        const session = await db.whatsAppOrderSession.findUnique({
-          where: { id: data.sessionId },
-          select: { customerPhone: true },
-        })
-        customerPhone = session?.customerPhone
-      }
       if (!customerPhone) {
         return NextResponse.json(
           { error: 'customerPhone diperlukan untuk perintah ini' },
