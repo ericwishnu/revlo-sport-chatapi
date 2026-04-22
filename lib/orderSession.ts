@@ -1071,7 +1071,7 @@ export async function getLatestInvoiceText(customerPhone: string): Promise<strin
     })
 
     if (!session?.invoiceId) {
-      return 'Belum ada invoice untuk nomor ini.'
+      return 'Tidak ada riwayat pesanan.'
     }
 
     invoice = await db.invoice.findUnique({
@@ -1089,7 +1089,7 @@ export async function getLatestInvoiceText(customerPhone: string): Promise<strin
   }
 
   if (!invoice) {
-    return 'Belum ada invoice untuk nomor ini.'
+    return 'Tidak ada riwayat pesanan.'
   }
 
   const session = await db.whatsAppOrderSession.findFirst({

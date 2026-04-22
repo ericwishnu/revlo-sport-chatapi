@@ -23,6 +23,10 @@ const GLOBAL_COMMANDS = {
     'cek riwayat transaksi',
     'riwayat transaksi',
     'riwayat invoice',
+    'cek riwayat pesanan',
+    'riwayat pesanan',
+    'history pesanan',
+    'cek history pesanan',
   ],
   // Payment confirmation uses includes() — customer may append context
   PAYMENT_CONFIRM: ['sudah transfer', 'sudah bayar', 'konfirmasi pembayaran', 'saya sudah transfer'],
