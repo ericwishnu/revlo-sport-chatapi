@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x \"/Users/ewish/Documents/Web Workspace/www/ewish/revlo.sport/deploy.sh\")",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npx prisma *)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3001 -o /dev/null -w \"%{http_code}\")",
+      "Bash(kill 87883)"
+    ],
+    "additionalDirectories": [
+      "/Users/ewish/Documents/Web Workspace/www/ewish/revlo.sport/app/api/auth",
+      "/Users/ewish/Documents/Web Workspace/www/ewish/revlo.sport/app/api/shipping"
+    ]
+  }
+}
