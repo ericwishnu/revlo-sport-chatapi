@@ -21,7 +21,7 @@ type Invoice = {
   id: string
   invoiceNumber: string
   customerName: string
-  customerEmail: string
+  customerEmail: string | null
   customerPhone: string | null
   notes: string | null
   subtotal: number
@@ -112,7 +112,14 @@ export default function InvoicesPage() {
   async function loadProducts() {
     const res = await fetch('/api/products')
     const data = await res.json()
-    setProducts(Array.isArray(data) ? data : [])
+    setProducts(
+      Array.isArray(data)
+        ? data.map((product) => ({
+            ...product,
+            variants: Array.isArray(product.variants) ? product.variants : [],
+          }))
+        : []
+    )
   }
 
   useEffect(() => {
@@ -172,8 +179,12 @@ export default function InvoicesPage() {
   const total = subtotal + Number(form.shippingCost) - Number(form.discountAmount)
 
   async function handleSave() {
-    if (!form.customerName.trim() || !form.customerEmail.trim()) {
-      showToast('error', 'Nama dan email customer wajib diisi')
+    if (!form.customerName.trim()) {
+      showToast('error', 'Nama customer wajib diisi')
+      return
+    }
+    if (form.sendEmail && !form.customerEmail.trim()) {
+      showToast('error', 'Email customer wajib diisi jika ingin mengirim invoice via email')
       return
     }
     if (formItems.length === 0) {
@@ -191,7 +202,7 @@ export default function InvoicesPage() {
     try {
       const payload = {
         customerName: form.customerName,
-        customerEmail: form.customerEmail,
+        customerEmail: form.customerEmail.trim() || null,
         customerPhone: form.customerPhone || null,
         notes: form.notes || null,
         shippingCost: Number(form.shippingCost),
@@ -221,7 +232,7 @@ export default function InvoicesPage() {
 
       showToast(
         'success',
-        form.sendEmail
+        form.sendEmail && form.customerEmail.trim()
           ? `Invoice ${data.invoiceNumber} berhasil dibuat dan dikirim ke ${form.customerEmail}`
           : `Invoice ${data.invoiceNumber} berhasil dibuat`
       )
@@ -379,7 +390,11 @@ export default function InvoicesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{inv.customerName}</p>
-                    <p className="text-xs text-gray-400">{inv.customerEmail}</p>
+                    {inv.customerEmail
+                      ? <p className="text-xs text-gray-400">{inv.customerEmail}</p>
+                      : inv.customerPhone
+                        ? <p className="text-xs text-gray-400">WA: {inv.customerPhone}</p>
+                        : null}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(inv.createdAt).toLocaleDateString('id-ID', {
@@ -537,12 +552,13 @@ export default function InvoicesPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Customer *
+                    Email Customer
                   </label>
                   <input
                     type="email"
                     value={form.customerEmail}
                     onChange={(e) => setForm((f) => ({ ...f, customerEmail: e.target.value }))}
+                    placeholder="Opsional — diperlukan untuk kirim email"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -586,6 +602,7 @@ export default function InvoicesPage() {
                 <div className="space-y-2">
                   {formItems.map((item, idx) => {
                     const selectedProduct = products.find((p) => p.id === item.productId)
+                    const selectedVariants = selectedProduct?.variants ?? []
                     return (
                       <div key={idx} className="border rounded-lg p-3 bg-gray-50 space-y-2">
                         <div className="grid grid-cols-12 gap-2">
@@ -604,7 +621,7 @@ export default function InvoicesPage() {
                               <option value="__custom__">— Input Manual —</option>
                             </select>
                           </div>
-                          {selectedProduct && selectedProduct.variants.length > 0 && (
+                          {selectedProduct && selectedVariants.length > 0 && (
                             <div className="col-span-3">
                               <select
                                 value={item.variantId}
@@ -612,7 +629,7 @@ export default function InvoicesPage() {
                                 className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                               >
                                 <option value="">— Variant —</option>
-                                {selectedProduct.variants
+                                {selectedVariants
                                   .filter((v) => v.isActive)
                                   .map((v) => (
                                     <option key={v.id} value={v.id}>
@@ -737,11 +754,18 @@ export default function InvoicesPage() {
                   type="checkbox"
                   id="sendEmail"
                   checked={form.sendEmail}
+                  disabled={!form.customerEmail.trim()}
                   onChange={(e) => setForm((f) => ({ ...f, sendEmail: e.target.checked }))}
-                  className="w-4 h-4"
+                  className="w-4 h-4 disabled:opacity-40 disabled:cursor-not-allowed"
                 />
-                <label htmlFor="sendEmail" className="text-sm text-gray-700">
+                <label
+                  htmlFor="sendEmail"
+                  className={`text-sm ${form.customerEmail.trim() ? 'text-gray-700' : 'text-gray-400'}`}
+                >
                   Kirim invoice ke email customer setelah dibuat
+                  {!form.customerEmail.trim() && (
+                    <span className="ml-1 text-xs">(isi email terlebih dahulu)</span>
+                  )}
                 </label>
               </div>
             </div>
@@ -793,9 +817,14 @@ export default function InvoicesPage() {
               <div>
                 <p className="text-xs text-gray-500 mb-1">Customer</p>
                 <p className="font-medium">{detailInvoice.customerName}</p>
-                <p className="text-sm text-gray-600">{detailInvoice.customerEmail}</p>
+                {detailInvoice.customerEmail && (
+                  <p className="text-sm text-gray-600">{detailInvoice.customerEmail}</p>
+                )}
                 {detailInvoice.customerPhone && (
                   <p className="text-sm text-gray-600">{detailInvoice.customerPhone}</p>
+                )}
+                {!detailInvoice.customerEmail && !detailInvoice.customerPhone && (
+                  <p className="text-sm text-gray-400 italic">Tidak ada kontak</p>
                 )}
               </div>
 

@@ -16,7 +16,7 @@ const itemSchema = z.object({
 
 const schema = z.object({
   customerName: z.string().min(1),
-  customerEmail: z.string().email(),
+  customerEmail: z.string().email().optional().nullable(),
   customerPhone: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   items: z.array(itemSchema).min(1),
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     let deliveryStatus: 'PENDING' | 'SENT' | 'FAILED' = 'PENDING'
     let deliveryError: string | null = null
 
-    if (data.sendEmail) {
+    if (data.sendEmail && data.customerEmail) {
       const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
       try {
         await sendInvoiceEmail({

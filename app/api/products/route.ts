@@ -25,7 +25,12 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const products = await db.product.findMany({
-    include: { category: true },
+    include: {
+      category: true,
+      variants: {
+        orderBy: { name: 'asc' },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   })
   return NextResponse.json(products)

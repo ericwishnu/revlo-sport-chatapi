@@ -722,6 +722,82 @@ export async function processMessageByPhone(
   return processMessage(session.id, userMessage)
 }
 
+export async function claimPayment(
+  input: { sessionId: string } | { customerPhone: string },
+  customerNote?: string
+): Promise<{ reply: string; invoiceNumber: string | null }> {
+  // Resolve the invoice from session or phone
+  let invoiceId: string | null = null
+
+  if ('sessionId' in input) {
+    const session = await db.whatsAppOrderSession.findUnique({ where: { id: input.sessionId } })
+    if (!session) throw new Error('Sesi tidak ditemukan')
+    if (session.status !== 'CONFIRMED') throw new Error('Pesanan belum dikonfirmasi atau sudah dibatalkan')
+    invoiceId = session.invoiceId ?? null
+  } else {
+    const session = await db.whatsAppOrderSession.findFirst({
+      where: {
+        customerPhone: input.customerPhone,
+        status: 'CONFIRMED',
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+    if (!session) throw new Error('Tidak ada pesanan yang dikonfirmasi untuk nomor ini')
+    invoiceId = session.invoiceId ?? null
+  }
+
+  if (!invoiceId) throw new Error('Invoice tidak ditemukan untuk pesanan ini')
+
+  const invoice = await db.invoice.findUnique({ where: { id: invoiceId } })
+  if (!invoice) throw new Error('Invoice tidak ditemukan')
+
+  if (invoice.paymentStatus === 'PAID') {
+    return {
+      reply:
+        'Pembayaran Anda sudah tercatat lunas. Terima kasih telah berbelanja di Revlo Sport! 🏸',
+      invoiceNumber: invoice.invoiceNumber,
+    }
+  }
+
+  if (invoice.paymentClaimedAt) {
+    return {
+      reply:
+        `Konfirmasi pembayaran Anda sudah kami terima sebelumnya (${invoice.paymentClaimedAt.toLocaleDateString('id-ID')}). ` +
+        'Tim kami sedang melakukan verifikasi. Mohon tunggu sebentar ya!',
+      invoiceNumber: invoice.invoiceNumber,
+    }
+  }
+
+  const claimedAt = new Date()
+  const claimNote = customerNote?.trim() || null
+
+  await db.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      paymentClaimedAt: claimedAt,
+      paymentClaimNote: claimNote,
+    },
+  })
+
+  const dateStr = claimedAt.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+  return {
+    reply: [
+      `✅ Terima kasih! Konfirmasi pembayaran untuk *${invoice.invoiceNumber}* telah kami terima pada ${dateStr}.`,
+      '',
+      'Admin kami akan segera melakukan verifikasi dan mengupdate status pesanan Anda.',
+      'Mohon tunggu sebentar ya! 😊',
+    ].join('\n'),
+    invoiceNumber: invoice.invoiceNumber,
+  }
+}
+
 export async function cancelSession(sessionId: string): Promise<SessionApiResponse> {
   const session = await db.whatsAppOrderSession.findUnique({ where: { id: sessionId } })
   if (!session) throw new Error('Sesi tidak ditemukan')

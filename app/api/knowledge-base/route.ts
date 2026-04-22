@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+function parseBankAccounts(raw: string | null | undefined) {
+  if (!raw) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
 export async function GET(req: NextRequest) {
   const key = req.nextUrl.searchParams.get('key')
   if (!process.env.KB_API_KEY || key !== process.env.KB_API_KEY) {
@@ -48,6 +59,7 @@ export async function GET(req: NextRequest) {
         email: settings?.email ?? null,
         address: settings?.address ?? null,
       },
+      bank_accounts: parseBankAccounts(settings?.bankAccountsJson),
       products: products.map(p => ({
         id: p.id,
         name: p.name,

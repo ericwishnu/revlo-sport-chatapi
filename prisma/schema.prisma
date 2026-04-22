@@ -148,6 +148,7 @@ model SiteSettings {
   whatsapp           String?
   email              String?
   address            String?  @db.Text
+  bankAccountsJson   String?  @db.Text
   languageDefault    String   @default("id")
   communicationStyle String   @default("ramah, singkat, persuasif, sopan")
   updatedAt          DateTime @updatedAt
@@ -181,9 +182,11 @@ model Invoice {
   totalAmount     Float
   paymentStatus   InvoicePaymentStatus  @default(UNPAID)
   deliveryStatus  InvoiceDeliveryStatus @default(PENDING)
-  deliveredAt     DateTime?
-  deliveryError   String?               @db.Text
-  items           InvoiceItem[]
+  deliveredAt         DateTime?
+  deliveryError       String?               @db.Text
+  paymentClaimedAt    DateTime?
+  paymentClaimNote    String?               @db.Text
+  items               InvoiceItem[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 }
