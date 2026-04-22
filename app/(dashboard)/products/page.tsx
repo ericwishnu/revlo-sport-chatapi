@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, CheckCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, CheckCircle, Download, Upload } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import ImageUploader from '@/app/(dashboard)/components/ImageUploader'
 import VariantManager from '@/app/(dashboard)/components/VariantManager'
@@ -22,9 +22,12 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState<Product | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'info' | 'variant'>('info')
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   function showToast(type: 'success' | 'error', message: string) {
     const id = Date.now()
@@ -160,6 +163,70 @@ export default function ProductsPage() {
     }
   }
 
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const res = await fetch('/api/products/export')
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Gagal export produk')
+      }
+
+      const data = await res.json()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `products-export-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      showToast('success', 'Export produk berhasil')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Gagal export produk'
+      showToast('error', message)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/products/import', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal import produk')
+      }
+
+      const summary = data.summary
+      showToast(
+        'success',
+        `Import selesai. Baru: ${summary?.created ?? 0}, Update: ${summary?.updated ?? 0}, Gagal: ${summary?.failed ?? 0}`
+      )
+      await load()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Gagal import produk'
+      showToast('error', message)
+    } finally {
+      setImporting(false)
+      if (importFileRef.current) {
+        importFileRef.current.value = ''
+      }
+    }
+  }
+
   return (
     <div className="p-8">
       {/* Toast Notifications */}
@@ -188,9 +255,34 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Produk</h1>
           <p className="text-gray-500 text-sm mt-0.5">{products.length} produk terdaftar</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-          <Plus className="w-4 h-4" /> Tambah Produk
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={importFileRef}
+            type="file"
+            accept="application/json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+          <button
+            onClick={handleExport}
+            disabled={exporting || importing}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" />
+            {exporting ? 'Export...' : 'Export'}
+          </button>
+          <button
+            onClick={() => importFileRef.current?.click()}
+            disabled={exporting || importing}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Upload className="w-4 h-4" />
+            {importing ? 'Import...' : 'Import'}
+          </button>
+          <button onClick={openCreate} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+            <Plus className="w-4 h-4" /> Tambah Produk
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
