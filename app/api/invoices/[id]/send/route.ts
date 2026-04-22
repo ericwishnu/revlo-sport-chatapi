@@ -16,6 +16,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!invoice) return NextResponse.json({ error: 'Invoice tidak ditemukan' }, { status: 404 })
 
+  if (!invoice.customerEmail) {
+    return NextResponse.json(
+      { error: 'Invoice ini tidak memiliki email pelanggan. Pengiriman email tidak tersedia untuk pesanan via WhatsApp.' },
+      { status: 422 }
+    )
+  }
+
   const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
 
   try {

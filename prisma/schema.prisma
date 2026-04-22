@@ -30,6 +30,13 @@ enum InvoicePaymentStatus {
   CANCELLED
 }
 
+enum OrderSessionStatus {
+  DRAFT
+  AWAITING_CONFIRMATION
+  CONFIRMED
+  CANCELLED
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String
@@ -165,7 +172,7 @@ model Invoice {
   id              String                @id @default(cuid())
   invoiceNumber   String                @unique
   customerName    String
-  customerEmail   String
+  customerEmail   String?
   customerPhone   String?
   notes           String?               @db.Text
   subtotal        Float
@@ -197,4 +204,19 @@ model InvoiceItem {
   createdAt   DateTime        @default(now())
 
   @@index([invoiceId])
+}
+
+model WhatsAppOrderSession {
+  id            String              @id @default(cuid())
+  customerPhone String
+  status        OrderSessionStatus  @default(DRAFT)
+  currentStep   String              @default("select_product")
+  payloadJson   Json                @default("{}")
+  invoiceId     String?
+  expiresAt     DateTime
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([customerPhone])
+  @@index([status])
 }
