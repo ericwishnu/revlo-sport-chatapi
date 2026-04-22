@@ -7,11 +7,13 @@
       "Bash(npx prisma *)",
       "Bash(npm run *)",
       "Bash(curl -s http://localhost:3001 -o /dev/null -w \"%{http_code}\")",
-      "Bash(kill 87883)"
+      "Bash(kill 87883)",
+      "Bash(npx next *)"
     ],
     "additionalDirectories": [
       "/Users/ewish/Documents/Web Workspace/www/ewish/revlo.sport/app/api/auth",
-      "/Users/ewish/Documents/Web Workspace/www/ewish/revlo.sport/app/api/shipping"
+      "/Users/ewish/Documents/Web Workspace/www/ewish/revlo.sport/app/api/shipping",
+      "/Users/ewish/Documents/Web Workspace/www/ewish/revlo.sport/app/api/settings/whatsapp-menu"
     ]
   }
 }

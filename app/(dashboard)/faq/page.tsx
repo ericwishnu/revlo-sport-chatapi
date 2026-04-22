@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, ChevronDown, ChevronRight } from 'lucide-react'
+import ConfirmModal from '@/app/(dashboard)/components/ConfirmModal'
 
 type Faq = { id: string; question: string; answer: string; category: string; sortOrder: number; isActive: boolean }
 
@@ -13,6 +14,7 @@ export default function FaqPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   async function load() {
     const data = await fetch('/api/faq').then(r => r.json())
@@ -39,8 +41,8 @@ export default function FaqPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Hapus FAQ ini?')) return
     await fetch(`/api/faq/${id}`, { method: 'DELETE' })
+    setDeleteTargetId(null)
     load()
   }
 
@@ -91,7 +93,7 @@ export default function FaqPage() {
                         {f.isActive ? <ToggleRight className="w-5 h-5 text-green-500" /> : <ToggleLeft className="w-5 h-5 text-gray-300" />}
                       </button>
                       <button onClick={() => openEdit(f)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => handleDelete(f.id)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => setDeleteTargetId(f.id)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </div>
                 </div>
@@ -141,6 +143,14 @@ export default function FaqPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteTargetId !== null}
+        title="Hapus FAQ"
+        description="Pertanyaan dan jawaban ini akan dihapus permanen dari knowledge base."
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => deleteTargetId && handleDelete(deleteTargetId)}
+      />
     </div>
   )
 }

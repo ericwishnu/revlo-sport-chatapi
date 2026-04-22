@@ -65,6 +65,52 @@ async function main() {
     ],
   })
 
+  const waMenus = [
+    {
+      menuKey: '1',
+      title: 'Cek Produk',
+      type: 'CHATBOT' as const,
+      prompt: 'Jelaskan produk-produk yang tersedia di toko kami beserta harga dan stok.',
+      sortOrder: 1,
+    },
+    {
+      menuKey: '2',
+      title: 'Info Pengiriman',
+      type: 'CHATBOT' as const,
+      prompt: 'Jelaskan metode pengiriman yang tersedia, estimasi waktu, dan biaya ongkos kirim.',
+      sortOrder: 2,
+    },
+    {
+      menuKey: '3',
+      title: 'Pembayaran',
+      type: 'CHATBOT' as const,
+      prompt: 'Jelaskan metode pembayaran yang tersedia untuk customer.',
+      sortOrder: 3,
+    },
+    {
+      menuKey: '4',
+      title: 'Promo Spesial',
+      type: 'STATIC' as const,
+      content: 'Saat ini belum ada promo yang aktif. Pantau terus ya!',
+      isActive: false,
+      sortOrder: 4,
+    },
+    {
+      menuKey: '5',
+      title: 'Hubungi Admin',
+      type: 'HANDOFF' as const,
+      sortOrder: 5,
+    },
+  ]
+
+  for (const menu of waMenus) {
+    await prisma.whatsappMenu.upsert({
+      where: { menuKey: menu.menuKey },
+      update: {},
+      create: menu,
+    })
+  }
+
   console.log('✅ Seed selesai')
 }
 

@@ -4,6 +4,7 @@ import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, CheckCircle
 import { formatCurrency } from '@/lib/utils'
 import ImageUploader from '@/app/(dashboard)/components/ImageUploader'
 import VariantManager from '@/app/(dashboard)/components/VariantManager'
+import ConfirmModal from '@/app/(dashboard)/components/ConfirmModal'
 
 type Category = { id: string; name: string }
 type Product = {
@@ -28,6 +29,7 @@ export default function ProductsPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'info' | 'variant'>('info')
   const importFileRef = useRef<HTMLInputElement>(null)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   function showToast(type: 'success' | 'error', message: string) {
     const id = Date.now()
@@ -130,7 +132,6 @@ export default function ProductsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Hapus produk ini?')) return
     try {
       const res = await fetch(`/api/products/${id}`, { method: 'DELETE' })
       if (!res.ok) {
@@ -142,6 +143,8 @@ export default function ProductsPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Gagal menghapus produk'
       showToast('error', message)
+    } finally {
+      setDeleteTargetId(null)
     }
   }
 
@@ -320,7 +323,7 @@ export default function ProductsPage() {
                     <button onClick={() => openEdit(p)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600">
                       <Pencil className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDelete(p.id)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600">
+                    <button onClick={() => setDeleteTargetId(p.id)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -446,6 +449,14 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteTargetId !== null}
+        title="Hapus produk"
+        description="Produk yang dihapus tidak bisa dikembalikan. Lanjutkan penghapusan?"
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => deleteTargetId && handleDelete(deleteTargetId)}
+      />
     </div>
   )
 }

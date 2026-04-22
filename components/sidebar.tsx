@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import {
-  LayoutDashboard, Package, Tag, Truck, HelpCircle, Settings, Users, LogOut, Bot
+  LayoutDashboard, Package, Tag, Truck, HelpCircle, Settings, Users, LogOut, Bot, FileText, MessageSquare
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -11,10 +11,12 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/products', label: 'Produk', icon: Package },
   { href: '/categories', label: 'Kategori', icon: Tag },
+  { href: '/invoices', label: 'Invoice', icon: FileText },
   { href: '/shipping', label: 'Pengiriman', icon: Truck },
   { href: '/faq', label: 'FAQ', icon: HelpCircle },
   { href: '/knowledge-base', label: 'Knowledge Base', icon: Bot },
-  { href: '/settings', label: 'Pengaturan Toko', icon: Settings },
+  { href: '/settings/whatsapp-menu', label: 'Menu WhatsApp', icon: MessageSquare },
+  { href: '/settings', label: 'Pengaturan Toko', icon: Settings, exact: true },
 ]
 
 const adminItems = [
@@ -25,6 +27,11 @@ export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
   const isAdmin = (session?.user as any)?.role === 'ADMIN'
+
+  function isNavItemActive(href: string, exact?: boolean) {
+    if (exact) return pathname === href
+    return pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+  }
 
   return (
     <aside className="w-60 min-h-screen bg-gray-900 text-white flex flex-col">
@@ -39,13 +46,13 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 p-3 space-y-0.5">
-        {navItems.map(({ href, label, icon: Icon }) => (
+        {navItems.map(({ href, label, icon: Icon, exact }) => (
           <Link
             key={href}
             href={href}
             className={cn(
               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-              pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+              isNavItemActive(href, exact)
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-400 hover:text-white hover:bg-gray-800'
             )}

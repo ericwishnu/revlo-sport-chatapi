@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import ConfirmModal from '@/app/(dashboard)/components/ConfirmModal'
 
 type ShippingMethod = {
   id: string; name: string; description: string | null; estimatedDays: string
@@ -16,6 +17,7 @@ export default function ShippingPage() {
   const [editing, setEditing] = useState<ShippingMethod | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   async function load() {
     const data = await fetch('/api/shipping').then(r => r.json())
@@ -42,8 +44,8 @@ export default function ShippingPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Hapus metode pengiriman ini?')) return
     await fetch(`/api/shipping/${id}`, { method: 'DELETE' })
+    setDeleteTargetId(null)
     load()
   }
 
@@ -84,7 +86,7 @@ export default function ShippingPage() {
                 {m.isActive ? <ToggleRight className="w-5 h-5 text-green-500" /> : <ToggleLeft className="w-5 h-5 text-gray-300" />}
               </button>
               <button onClick={() => openEdit(m)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"><Pencil className="w-4 h-4" /></button>
-              <button onClick={() => handleDelete(m.id)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+              <button onClick={() => setDeleteTargetId(m.id)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
             </div>
           </div>
         ))}
@@ -130,6 +132,14 @@ export default function ShippingPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteTargetId !== null}
+        title="Hapus metode pengiriman"
+        description="Metode pengiriman ini akan dihapus dari daftar dan tidak bisa dipulihkan."
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => deleteTargetId && handleDelete(deleteTargetId)}
+      />
     </div>
   )
 }

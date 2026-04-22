@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, Tag } from 'lucide-react'
+import ConfirmModal from '@/app/(dashboard)/components/ConfirmModal'
 
 type Category = { id: string; name: string; description: string | null; _count?: { products: number } }
 
@@ -12,6 +13,7 @@ export default function CategoriesPage() {
   const [editing, setEditing] = useState<Category | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   async function load() {
     const data = await fetch('/api/categories?count=1').then(r => r.json())
@@ -41,8 +43,8 @@ export default function CategoriesPage() {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Hapus kategori "${name}"? Produk yang menggunakan kategori ini akan menjadi tanpa kategori.`)) return
     await fetch(`/api/categories/${id}`, { method: 'DELETE' })
+    setDeleteTarget(null)
     load()
   }
 
@@ -75,7 +77,7 @@ export default function CategoriesPage() {
               <button onClick={() => openEdit(c)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600">
                 <Pencil className="w-4 h-4" />
               </button>
-              <button onClick={() => handleDelete(c.id, c.name)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600">
+              <button onClick={() => setDeleteTarget({ id: c.id, name: c.name })} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
@@ -124,6 +126,14 @@ export default function CategoriesPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title="Hapus kategori"
+        description={deleteTarget ? `Kategori "${deleteTarget.name}" akan dihapus. Produk yang memakai kategori ini akan menjadi tanpa kategori.` : ''}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget.id, deleteTarget.name)}
+      />
     </div>
   )
 }

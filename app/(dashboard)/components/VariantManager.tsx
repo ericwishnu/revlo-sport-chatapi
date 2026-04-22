@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2, Pencil, AlertCircle, CheckCircle } from 'lucide-react'
 import ImageUploader from '@/app/(dashboard)/components/ImageUploader'
+import ConfirmModal from '@/app/(dashboard)/components/ConfirmModal'
 
 type Variant = {
   id: string
@@ -30,6 +31,7 @@ export default function VariantManager({ productId, onShowToast }: VariantManage
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   async function load() {
     try {
@@ -128,11 +130,11 @@ export default function VariantManager({ productId, onShowToast }: VariantManage
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Hapus variant ini?')) return
     try {
       const res = await fetch(`/api/products/${productId}/variants/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Gagal menghapus variant')
       onShowToast('success', 'Variant berhasil dihapus')
+      setDeleteTargetId(null)
       load()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Gagal menghapus variant'
@@ -210,7 +212,7 @@ export default function VariantManager({ productId, onShowToast }: VariantManage
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(v.id)}
+                        onClick={() => setDeleteTargetId(v.id)}
                         className="p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-600"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -293,6 +295,14 @@ export default function VariantManager({ productId, onShowToast }: VariantManage
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteTargetId !== null}
+        title="Hapus variant"
+        description="Variant ini akan dihapus dari produk dan tidak bisa dipulihkan."
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => deleteTargetId && handleDelete(deleteTargetId)}
+      />
     </div>
   )
 }

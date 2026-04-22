@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
+import ConfirmModal from '@/app/(dashboard)/components/ConfirmModal'
 
 type User = { id: string; name: string; email: string; role: 'ADMIN' | 'EDITOR'; createdAt: string }
 
@@ -12,6 +13,7 @@ export default function UsersPage() {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'EDITOR' as 'ADMIN' | 'EDITOR' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   async function load() {
     const data = await fetch('/api/users').then(r => r.json())
@@ -29,8 +31,8 @@ export default function UsersPage() {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Hapus user "${name}"?`)) return
     await fetch(`/api/users/${id}`, { method: 'DELETE' })
+    setDeleteTarget(null)
     load()
   }
 
@@ -72,7 +74,7 @@ export default function UsersPage() {
                 <td className="px-4 py-3 text-gray-500">{new Date(u.createdAt).toLocaleDateString('id-ID')}</td>
                 <td className="px-4 py-3">
                   {u.id !== currentUserId && (
-                    <button onClick={() => handleDelete(u.id, u.name)} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600">
+                    <button onClick={() => setDeleteTarget({ id: u.id, name: u.name })} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
@@ -116,6 +118,14 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title="Hapus user"
+        description={deleteTarget ? `User "${deleteTarget.name}" akan dihapus dan kehilangan akses ke dashboard.` : ''}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget.id, deleteTarget.name)}
+      />
     </div>
   )
 }

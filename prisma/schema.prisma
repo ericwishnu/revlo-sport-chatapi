@@ -12,6 +12,24 @@ enum Role {
   EDITOR
 }
 
+enum InvoiceDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum WhatsappMenuType {
+  CHATBOT
+  HANDOFF
+  STATIC
+}
+
+enum InvoicePaymentStatus {
+  UNPAID
+  PAID
+  CANCELLED
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String
@@ -70,6 +88,7 @@ model Product {
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
   variants    ProductVariant[]
+  invoiceItems InvoiceItem[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -84,6 +103,7 @@ model ProductVariant {
   stock       Int       @default(0)
   imageUrl    String?   // Gambar spesifik untuk variant ini
   isActive    Boolean   @default(true)
+  invoiceItems InvoiceItem[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -124,4 +144,57 @@ model SiteSettings {
   languageDefault    String   @default("id")
   communicationStyle String   @default("ramah, singkat, persuasif, sopan")
   updatedAt          DateTime @updatedAt
+}
+
+model WhatsappMenu {
+  id        String          @id @default(cuid())
+  menuKey   String          @unique
+  title     String
+  type      WhatsappMenuType
+  prompt    String?         @db.Text
+  content   String?         @db.Text
+  isActive  Boolean         @default(true)
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([sortOrder])
+}
+
+model Invoice {
+  id              String                @id @default(cuid())
+  invoiceNumber   String                @unique
+  customerName    String
+  customerEmail   String
+  customerPhone   String?
+  notes           String?               @db.Text
+  subtotal        Float
+  shippingCost    Float                 @default(0)
+  discountAmount  Float                 @default(0)
+  totalAmount     Float
+  paymentStatus   InvoicePaymentStatus  @default(UNPAID)
+  deliveryStatus  InvoiceDeliveryStatus @default(PENDING)
+  deliveredAt     DateTime?
+  deliveryError   String?               @db.Text
+  items           InvoiceItem[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+}
+
+model InvoiceItem {
+  id          String          @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  name        String
+  sku         String?
+  unitPrice   Float
+  quantity    Int
+  lineTotal   Float
+  createdAt   DateTime        @default(now())
+
+  @@index([invoiceId])
 }
