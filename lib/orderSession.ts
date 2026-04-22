@@ -38,6 +38,12 @@ export interface SessionApiResponse {
   invoiceId?: string
 }
 
+type StoreBankAccount = {
+  bankName: string
+  accountNumber: string
+  accountHolder: string
+}
+
 // ---------- Helpers ----------
 
 function sessionExpiry(): Date {
@@ -173,6 +179,39 @@ const ADDRESS_PROMPT =
 const NOTES_PROMPT =
   'Ada catatan tambahan untuk pesanan ini?\n(Balas "-" jika tidak ada catatan)'
 
+function parseBankAccounts(raw: string | null | undefined): StoreBankAccount[] {
+  if (!raw) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => ({
+        bankName: item?.bankName?.trim() || '',
+        accountNumber: item?.accountNumber?.trim() || '',
+        accountHolder: item?.accountHolder?.trim() || '',
+      }))
+      .filter((item) => item.bankName && item.accountNumber && item.accountHolder)
+  } catch {
+    return []
+  }
+}
+
+function isTransferPaymentMethod(paymentMethod?: string | null): boolean {
+  return (paymentMethod || '').toLowerCase().startsWith('transfer')
+}
+
+function resolveTransferAccount(
+  paymentMethod: string | undefined,
+  accounts: StoreBankAccount[]
+): StoreBankAccount | null {
+  if (!isTransferPaymentMethod(paymentMethod) || accounts.length === 0) return null
+
+  const method = (paymentMethod || '').toLowerCase()
+  const matched = accounts.find((account) => method.includes(account.bankName.toLowerCase()))
+  return matched || accounts[0]
+}
+
 // ---------- Summary & invoice text ----------
 
 export function buildConfirmationSummary(p: OrderPayload): string {
@@ -269,7 +308,8 @@ export function buildInvoiceText(
   invoiceNumber: string,
   customerPhone: string,
   payload: OrderPayload,
-  storeName: string
+  storeName: string,
+  bankAccounts: StoreBankAccount[]
 ): string {
   const itemLabel = payload.variantName
     ? `${payload.productName} - ${payload.variantName}`
@@ -284,6 +324,20 @@ export function buildInvoiceText(
     month: 'long',
     year: 'numeric',
   })
+  const transferAccount = resolveTransferAccount(payload.paymentMethod, bankAccounts)
+
+  const transferBlock = transferAccount
+    ? [
+        'Tujuan Transfer:',
+        `Bank: ${transferAccount.bankName}`,
+        `No. Rekening: ${transferAccount.accountNumber}`,
+        `Atas Nama: ${transferAccount.accountHolder}`,
+        '',
+      ]
+    : []
+  const paymentInstruction = transferAccount
+    ? 'Setelah transfer, mohon konfirmasi pembayaran ke CS agar pesanan bisa diverifikasi.'
+    : 'Pesanan Anda akan diproses sesuai metode pembayaran yang dipilih.'
 
   return [
     '━━━━━━━━━━━━━━━━━━━━━━━',
@@ -307,7 +361,8 @@ export function buildInvoiceText(
     `Metode Pembayaran: ${payload.paymentMethod ?? '-'}`,
     'Status: Menunggu Pembayaran',
     '',
-    'Silakan lakukan pembayaran dan kirim bukti transfer jika diperlukan.',
+    ...transferBlock,
+    paymentInstruction,
     `Terima kasih telah berbelanja di ${storeName}!`,
     '━━━━━━━━━━━━━━━━━━━━━━━',
   ].join('\n')
@@ -407,6 +462,7 @@ async function confirmOrder(
       shippingCost,
       discountAmount: 0,
       totalAmount,
+      orderStatus: 'AWAITING_PAYMENT',
       items: {
         create: [
           {
@@ -434,7 +490,8 @@ async function confirmOrder(
 
   const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
   const storeName = settings?.storeName ?? 'Revlo Sport'
-  const invoiceText = buildInvoiceText(invoiceNumber, customerPhone, payload, storeName)
+  const bankAccounts = parseBankAccounts(settings?.bankAccountsJson)
+  const invoiceText = buildInvoiceText(invoiceNumber, customerPhone, payload, storeName, bankAccounts)
 
   return {
     sessionId,
@@ -776,6 +833,7 @@ export async function claimPayment(
     data: {
       paymentClaimedAt: claimedAt,
       paymentClaimNote: claimNote,
+      orderStatus: 'AWAITING_VERIFICATION',
     },
   })
 
@@ -791,7 +849,8 @@ export async function claimPayment(
     reply: [
       `✅ Terima kasih! Konfirmasi pembayaran untuk *${invoice.invoiceNumber}* telah kami terima pada ${dateStr}.`,
       '',
-      'Admin kami akan segera melakukan verifikasi dan mengupdate status pesanan Anda.',
+      'Pembayaran Anda akan diverifikasi admin.',
+      'Status pesanan akan diupdate setelah dicek.',
       'Mohon tunggu sebentar ya! 😊',
     ].join('\n'),
     invoiceNumber: invoice.invoiceNumber,

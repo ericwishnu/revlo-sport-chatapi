@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { processMessage, processMessageByPhone } from '@/lib/orderSession'
+import { claimPayment, processMessage, processMessageByPhone } from '@/lib/orderSession'
+
+const PAYMENT_CONFIRM_KEYWORDS = [
+  'sudah transfer',
+  'sudah bayar',
+  'konfirmasi pembayaran',
+]
+
+function isPaymentConfirmationMessage(message: string): boolean {
+  const normalized = message.toLowerCase().trim()
+  return PAYMENT_CONFIRM_KEYWORDS.some((keyword) => normalized.includes(keyword))
+}
 
 // Accept either sessionId or customerPhone to look up the active session
 const schema = z.object({
@@ -15,6 +26,24 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const data = schema.parse(body)
+
+    if (isPaymentConfirmationMessage(data.message)) {
+      const claimResult = data.sessionId
+        ? await claimPayment({ sessionId: data.sessionId }, data.message)
+        : await claimPayment({ customerPhone: data.customerPhone! }, data.message)
+
+      return NextResponse.json(
+        {
+          sessionId: data.sessionId ?? null,
+          customerPhone: data.customerPhone ?? null,
+          status: 'confirmed',
+          currentStep: 'confirmed',
+          reply: claimResult.reply,
+          invoiceNumber: claimResult.invoiceNumber,
+        },
+        { status: 200 }
+      )
+    }
 
     const result = data.sessionId
       ? await processMessage(data.sessionId, data.message)

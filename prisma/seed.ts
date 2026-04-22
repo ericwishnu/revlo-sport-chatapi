@@ -28,20 +28,20 @@ async function main() {
   })
 
   const category = await prisma.category.upsert({
-    where: { name: 'Sepatu' },
+    where: { name: 'Shuttlecock' },
     update: {},
-    create: { name: 'Sepatu', description: 'Sepatu olahraga berbagai jenis' },
+    create: { name: 'Shuttlecock', description: 'Shuttlecock olahraga bulu tangkis' },
   })
 
   await prisma.product.upsert({
-    where: { sku: 'SKU-DEMO-001' },
+    where: { sku: 'REV-001' },
     update: {},
     create: {
-      name: 'Sepatu Lari Pro X1',
-      description: 'Sepatu lari ringan dengan sol anti-selip, cocok untuk lari pagi maupun marathon.',
+      name: 'Shuttlecock Pro X1',
+      description: 'Shuttlecock berkualitas tinggi untuk permainan bulu tangkis profesional.',
       price: 450000,
       stock: 50,
-      sku: 'SKU-DEMO-001',
+      sku: 'REV-001',
       isActive: true,
       categoryId: category.id,
     },

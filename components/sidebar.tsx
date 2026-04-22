@@ -16,6 +16,7 @@ const navItems = [
   { href: '/faq', label: 'FAQ', icon: HelpCircle },
   { href: '/knowledge-base', label: 'Knowledge Base', icon: Bot },
   { href: '/settings/whatsapp-menu', label: 'Menu WhatsApp', icon: MessageSquare },
+  { href: '/order-sessions', label: 'Order Session', icon: MessageSquare },
   { href: '/settings', label: 'Pengaturan Toko', icon: Settings, exact: true },
 ]
 

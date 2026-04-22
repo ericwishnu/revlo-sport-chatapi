@@ -6,6 +6,15 @@ import { z } from 'zod'
 
 const updateSchema = z.object({
   paymentStatus: z.enum(['UNPAID', 'PAID', 'CANCELLED']).optional(),
+  orderStatus: z
+    .enum([
+      'AWAITING_PAYMENT',
+      'AWAITING_VERIFICATION',
+      'PAYMENT_CONFIRMED',
+      'PROCESSING',
+      'COMPLETED',
+    ])
+    .optional(),
   deliveryStatus: z.enum(['PENDING', 'SENT', 'FAILED']).optional(),
   notes: z.string().optional().nullable(),
 })
@@ -37,9 +46,37 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = await req.json()
     const data = updateSchema.parse(body)
 
+    const updateData: z.infer<typeof updateSchema> = { ...data }
+
+    if (data.paymentStatus === 'PAID' && !data.orderStatus) {
+      updateData.orderStatus = 'PAYMENT_CONFIRMED'
+    }
+    if (data.paymentStatus === 'UNPAID' && !data.orderStatus) {
+      updateData.orderStatus = 'AWAITING_PAYMENT'
+    }
+    if (data.paymentStatus === 'CANCELLED' && !data.orderStatus) {
+      updateData.orderStatus = 'AWAITING_PAYMENT'
+    }
+
+    if (data.orderStatus === 'AWAITING_PAYMENT' && !data.paymentStatus) {
+      updateData.paymentStatus = 'UNPAID'
+    }
+    if (data.orderStatus === 'AWAITING_VERIFICATION' && !data.paymentStatus) {
+      updateData.paymentStatus = 'UNPAID'
+    }
+    if (data.orderStatus === 'PAYMENT_CONFIRMED' && !data.paymentStatus) {
+      updateData.paymentStatus = 'PAID'
+    }
+    if (data.orderStatus === 'PROCESSING' && !data.paymentStatus) {
+      updateData.paymentStatus = 'PAID'
+    }
+    if (data.orderStatus === 'COMPLETED' && !data.paymentStatus) {
+      updateData.paymentStatus = 'PAID'
+    }
+
     const invoice = await db.invoice.update({
       where: { id },
-      data,
+      data: updateData,
       include: { items: true },
     })
 

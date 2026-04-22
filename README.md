@@ -288,6 +288,8 @@ revlo.sport/
 | `GET/POST` | `/api/invoices` | List & buat invoice |
 | `GET/PUT/DELETE` | `/api/invoices/[id]` | Detail, update status, hapus |
 | `POST` | `/api/invoices/[id]/send` | Kirim ulang email invoice |
+| `GET` | `/api/orders/session` | List order session WhatsApp (filter status/nomor/aktif) |
+| `PUT` | `/api/orders/session/[id]` | Aksi admin pada session (saat ini: cancel) |
 | `GET/POST` | `/api/settings/whatsapp-menu` | List & buat menu WA |
 | `PUT/DELETE` | `/api/settings/whatsapp-menu/[id]` | Edit & hapus menu WA |
 | `PUT` | `/api/settings/whatsapp-menu/reorder` | Simpan urutan menu |

@@ -30,6 +30,14 @@ enum InvoicePaymentStatus {
   CANCELLED
 }
 
+enum InvoiceOrderStatus {
+  AWAITING_PAYMENT
+  AWAITING_VERIFICATION
+  PAYMENT_CONFIRMED
+  PROCESSING
+  COMPLETED
+}
+
 enum OrderSessionStatus {
   DRAFT
   AWAITING_CONFIRMATION
@@ -181,6 +189,7 @@ model Invoice {
   discountAmount  Float                 @default(0)
   totalAmount     Float
   paymentStatus   InvoicePaymentStatus  @default(UNPAID)
+  orderStatus     InvoiceOrderStatus    @default(AWAITING_PAYMENT)
   deliveryStatus  InvoiceDeliveryStatus @default(PENDING)
   deliveredAt         DateTime?
   deliveryError       String?               @db.Text

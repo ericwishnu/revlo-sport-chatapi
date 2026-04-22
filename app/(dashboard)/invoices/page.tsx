@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Plus, Trash2, Send, Eye, AlertCircle, CheckCircle, X, Search, ChevronDown, ChevronUp
 } from 'lucide-react'
@@ -29,6 +30,12 @@ type Invoice = {
   discountAmount: number
   totalAmount: number
   paymentStatus: 'UNPAID' | 'PAID' | 'CANCELLED'
+  orderStatus:
+    | 'AWAITING_PAYMENT'
+    | 'AWAITING_VERIFICATION'
+    | 'PAYMENT_CONFIRMED'
+    | 'PROCESSING'
+    | 'COMPLETED'
   deliveryStatus: 'PENDING' | 'SENT' | 'FAILED'
   deliveredAt: string | null
   deliveryError: string | null
@@ -67,6 +74,29 @@ const deliveryStatusLabel: Record<string, { label: string; color: string }> = {
   FAILED: { label: 'Gagal', color: 'bg-red-100 text-red-700' },
 }
 
+const orderStatusLabel: Record<string, { label: string; color: string }> = {
+  AWAITING_PAYMENT: {
+    label: 'Menunggu Pembayaran',
+    color: 'bg-amber-100 text-amber-800',
+  },
+  AWAITING_VERIFICATION: {
+    label: 'Menunggu Verifikasi',
+    color: 'bg-orange-100 text-orange-800',
+  },
+  PAYMENT_CONFIRMED: {
+    label: 'Pembayaran Terkonfirmasi',
+    color: 'bg-emerald-100 text-emerald-800',
+  },
+  PROCESSING: {
+    label: 'Diproses',
+    color: 'bg-sky-100 text-sky-800',
+  },
+  COMPLETED: {
+    label: 'Selesai',
+    color: 'bg-indigo-100 text-indigo-800',
+  },
+}
+
 const emptyForm = {
   customerName: '',
   customerEmail: '',
@@ -78,9 +108,12 @@ const emptyForm = {
 }
 
 export default function InvoicesPage() {
+  const searchParams = useSearchParams()
+  const initialSearch = searchParams.get('search') ?? ''
+
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [products, setProducts] = useState<Product[]>([])
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(initialSearch)
   const [filterPayment, setFilterPayment] = useState('')
   const [filterDelivery, setFilterDelivery] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -288,6 +321,47 @@ export default function InvoicesPage() {
     }
   }
 
+  async function handleUpdateOrderStatus(id: string, status: string) {
+    const res = await fetch(`/api/invoices/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderStatus: status }),
+    })
+    if (res.ok) {
+      showToast('success', 'Status order diperbarui')
+      load()
+    } else {
+      showToast('error', 'Gagal memperbarui status order')
+    }
+  }
+
+  async function handleQuickOrderStep(
+    invoice: Invoice,
+    nextOrderStatus: Invoice['orderStatus']
+  ) {
+    const payload: {
+      orderStatus: Invoice['orderStatus']
+      paymentStatus?: Invoice['paymentStatus']
+    } = { orderStatus: nextOrderStatus }
+
+    if (nextOrderStatus === 'PAYMENT_CONFIRMED' || nextOrderStatus === 'PROCESSING' || nextOrderStatus === 'COMPLETED') {
+      payload.paymentStatus = 'PAID'
+    }
+
+    const res = await fetch(`/api/invoices/${invoice.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+
+    if (res.ok) {
+      showToast('success', 'Status order berhasil diperbarui')
+      load()
+    } else {
+      showToast('error', 'Gagal memperbarui status order')
+    }
+  }
+
   return (
     <div className="p-8">
       {/* Toast */}
@@ -365,6 +439,7 @@ export default function InvoicesPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Tanggal</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">Total</th>
               <th className="text-center px-4 py-3 font-medium text-gray-600">Pembayaran</th>
+              <th className="text-center px-4 py-3 font-medium text-gray-600">Status Order</th>
               <th className="text-center px-4 py-3 font-medium text-gray-600">Email</th>
               <th className="px-4 py-3"></th>
             </tr>
@@ -418,6 +493,19 @@ export default function InvoicesPage() {
                     </select>
                   </td>
                   <td className="px-4 py-3 text-center">
+                    <select
+                      value={inv.orderStatus}
+                      onChange={(e) => handleUpdateOrderStatus(inv.id, e.target.value)}
+                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer ${orderStatusLabel[inv.orderStatus].color}`}
+                    >
+                      <option value="AWAITING_PAYMENT">Menunggu Pembayaran</option>
+                      <option value="AWAITING_VERIFICATION">Menunggu Verifikasi</option>
+                      <option value="PAYMENT_CONFIRMED">Pembayaran Terkonfirmasi</option>
+                      <option value="PROCESSING">Diproses</option>
+                      <option value="COMPLETED">Selesai</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-3 text-center">
                     <div className="flex flex-col items-center gap-1">
                       <span
                         className={`text-xs font-medium px-2 py-0.5 rounded-full ${deliveryStatusLabel[inv.deliveryStatus].color}`}
@@ -433,6 +521,15 @@ export default function InvoicesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 justify-end">
+                      {inv.orderStatus === 'AWAITING_VERIFICATION' && (
+                        <button
+                          onClick={() => handleQuickOrderStep(inv, 'PAYMENT_CONFIRMED')}
+                          className="px-2 py-1 text-[11px] font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+                          title="Konfirmasi pembayaran"
+                        >
+                          Verifikasi
+                        </button>
+                      )}
                       <button
                         onClick={() => setDetailInvoice(inv)}
                         className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
@@ -460,7 +557,7 @@ export default function InvoicesPage() {
                 </tr>
                 {expandedId === inv.id && (
                   <tr key={`${inv.id}-expanded`} className="bg-blue-50/40">
-                    <td colSpan={8} className="px-8 py-4">
+                    <td colSpan={9} className="px-8 py-4">
                       <div className="text-sm">
                         <p className="font-medium text-gray-700 mb-2">Item Pesanan</p>
                         <table className="w-full max-w-xl">
@@ -501,6 +598,32 @@ export default function InvoicesPage() {
                           )}
                           {inv.notes && <span>Catatan: {inv.notes}</span>}
                         </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {inv.orderStatus === 'AWAITING_VERIFICATION' && (
+                            <button
+                              onClick={() => handleQuickOrderStep(inv, 'PAYMENT_CONFIRMED')}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                            >
+                              Konfirmasi Pembayaran
+                            </button>
+                          )}
+                          {inv.orderStatus === 'PAYMENT_CONFIRMED' && (
+                            <button
+                              onClick={() => handleQuickOrderStep(inv, 'PROCESSING')}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-sky-600 text-white hover:bg-sky-700"
+                            >
+                              Lanjut ke Diproses
+                            </button>
+                          )}
+                          {inv.orderStatus === 'PROCESSING' && (
+                            <button
+                              onClick={() => handleQuickOrderStep(inv, 'COMPLETED')}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                            >
+                              Tandai Selesai
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -509,7 +632,7 @@ export default function InvoicesPage() {
             ))}
             {invoices.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
+                <td colSpan={9} className="px-4 py-10 text-center text-gray-400">
                   Belum ada invoice
                 </td>
               </tr>
