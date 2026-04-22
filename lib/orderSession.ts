@@ -874,3 +874,137 @@ export async function cancelSession(sessionId: string): Promise<SessionApiRespon
     reply: 'Pesanan telah dibatalkan. Ketik "ORDER" jika ingin memesan lagi. Terima kasih!',
   }
 }
+
+export async function cancelSessionByPhone(
+  customerPhone: string
+): Promise<{ cancelled: boolean; sessionId: string | null; reply: string }> {
+  const session = await db.whatsAppOrderSession.findFirst({
+    where: {
+      customerPhone,
+      status: { in: ['DRAFT', 'AWAITING_CONFIRMATION'] },
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!session) {
+    return {
+      cancelled: false,
+      sessionId: null,
+      reply: 'Saat ini tidak ada pesanan aktif yang sedang diproses.',
+    }
+  }
+
+  await db.whatsAppOrderSession.update({
+    where: { id: session.id },
+    data: { status: 'CANCELLED' },
+  })
+
+  return {
+    cancelled: true,
+    sessionId: session.id,
+    reply: 'Baik, pesanan Anda saya batalkan.',
+  }
+}
+
+export async function getMainMenuText(): Promise<string> {
+  const menuItems = await db.whatsappMenu.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: 'asc' },
+  })
+
+  if (menuItems.length === 0) {
+    return [
+      'Baik, saya kembalikan ke menu utama ya.',
+      '',
+      'Ketik *ORDER* untuk mulai memesan produk.',
+    ].join('\n')
+  }
+
+  const lines = menuItems.map((item, i) => `${i + 1}. ${item.title}`)
+  return [
+    'Baik, saya kembalikan ke menu utama ya.',
+    '',
+    'Silakan pilih menu:',
+    '',
+    ...lines,
+    '',
+    'Balas dengan angka pilihan Anda.',
+  ].join('\n')
+}
+
+export async function getOrderStatus(customerPhone: string): Promise<string> {
+  const activeSession = await db.whatsAppOrderSession.findFirst({
+    where: {
+      customerPhone,
+      status: { in: ['DRAFT', 'AWAITING_CONFIRMATION'] },
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (activeSession) {
+    if (activeSession.status === 'AWAITING_CONFIRMATION') {
+      return 'Pesanan Anda sedang menunggu konfirmasi. Balas *YA* untuk konfirmasi, *UBAH* untuk mengubah, atau *BATAL* untuk membatalkan.'
+    }
+    return 'Anda sedang dalam proses pemesanan. Silakan lanjutkan dengan memilih pilihan sesuai pertanyaan sebelumnya.'
+  }
+
+  const confirmedSession = await db.whatsAppOrderSession.findFirst({
+    where: {
+      customerPhone,
+      status: 'CONFIRMED',
+      invoiceId: { not: null },
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  if (!confirmedSession?.invoiceId) {
+    return 'Saat ini belum ada pesanan yang terdata untuk nomor ini.'
+  }
+
+  const invoice = await db.invoice.findUnique({ where: { id: confirmedSession.invoiceId } })
+  if (!invoice) {
+    return 'Saat ini belum ada pesanan yang terdata untuk nomor ini.'
+  }
+
+  const statusMap: Record<string, string> = {
+    AWAITING_PAYMENT: `Pesanan Anda (*${invoice.invoiceNumber}*) sedang menunggu pembayaran.`,
+    AWAITING_VERIFICATION: `Pembayaran Anda untuk *${invoice.invoiceNumber}* sedang menunggu verifikasi admin.`,
+    PAYMENT_CONFIRMED: `Pembayaran pesanan *${invoice.invoiceNumber}* sudah dikonfirmasi. Pesanan sedang diproses.`,
+    PROCESSING: `Pesanan *${invoice.invoiceNumber}* Anda sedang diproses.`,
+    COMPLETED: `Pesanan *${invoice.invoiceNumber}* Anda sudah selesai. Terima kasih telah berbelanja! 🎉`,
+  }
+
+  return (
+    statusMap[invoice.orderStatus] ??
+    `Status pesanan *${invoice.invoiceNumber}*: ${invoice.orderStatus}.`
+  )
+}
+
+export async function getLatestInvoiceText(customerPhone: string): Promise<string> {
+  const session = await db.whatsAppOrderSession.findFirst({
+    where: {
+      customerPhone,
+      status: 'CONFIRMED',
+      invoiceId: { not: null },
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  if (!session?.invoiceId) {
+    return 'Belum ada invoice untuk nomor ini.'
+  }
+
+  const invoice = await db.invoice.findUnique({ where: { id: session.invoiceId } })
+  if (!invoice) {
+    return 'Belum ada invoice untuk nomor ini.'
+  }
+
+  const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
+  const storeName = settings?.storeName ?? 'Revlo Sport'
+  const bankAccounts = parseBankAccounts(settings?.bankAccountsJson)
+  const payload = session.payloadJson as OrderPayload
+
+  return buildInvoiceText(invoice.invoiceNumber, customerPhone, payload, storeName, bankAccounts)
+}
