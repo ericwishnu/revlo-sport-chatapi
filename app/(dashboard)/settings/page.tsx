@@ -15,6 +15,7 @@ const emptyForm = {
   email: '',
   address: '',
   bankAccounts: [] as BankAccount[],
+  paymentMethods: [] as string[],
 }
 
 export default function SettingsPage() {
@@ -31,6 +32,7 @@ export default function SettingsPage() {
         email: d.email ?? '',
         address: d.address ?? '',
         bankAccounts: Array.isArray(d.bankAccounts) ? d.bankAccounts : [],
+        paymentMethods: Array.isArray(d.paymentMethods) ? d.paymentMethods : [],
       })
     })
   }, [])
@@ -52,6 +54,26 @@ export default function SettingsPage() {
     setForm((f) => ({
       ...f,
       bankAccounts: f.bankAccounts.filter((_, accountIndex) => accountIndex !== index),
+    }))
+  }
+
+  function addPaymentMethod() {
+    setForm((f) => ({ ...f, paymentMethods: [...f.paymentMethods, ''] }))
+  }
+
+  function updatePaymentMethod(index: number, value: string) {
+    setForm((f) => ({
+      ...f,
+      paymentMethods: f.paymentMethods.map((method, methodIndex) =>
+        methodIndex === index ? value : method
+      ),
+    }))
+  }
+
+  function removePaymentMethod(index: number) {
+    setForm((f) => ({
+      ...f,
+      paymentMethods: f.paymentMethods.filter((_, methodIndex) => methodIndex !== index),
     }))
   }
 
@@ -161,6 +183,48 @@ export default function SettingsPage() {
                     Hapus Rekening
                   </button>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Metode Pembayaran Chatbot</label>
+              <p className="text-xs text-gray-500 mt-1">Daftar ini tampil saat customer memilih metode pembayaran.</p>
+            </div>
+            <button
+              type="button"
+              onClick={addPaymentMethod}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Tambah Metode
+            </button>
+          </div>
+
+          {form.paymentMethods.length === 0 && (
+            <div className="text-sm text-gray-400 border border-dashed rounded-lg px-4 py-5 text-center">
+              Belum ada metode pembayaran khusus. Sistem akan memakai default.
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {form.paymentMethods.map((method, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={method}
+                  onChange={e => updatePaymentMethod(index, e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Transfer BCA"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePaymentMethod(index)}
+                  className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+                >
+                  Hapus
+                </button>
               </div>
             ))}
           </div>

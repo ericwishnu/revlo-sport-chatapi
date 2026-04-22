@@ -157,6 +157,7 @@ model SiteSettings {
   email              String?
   address            String?  @db.Text
   bankAccountsJson   String?  @db.Text
+  paymentMethodsJson String?  @db.Text
   languageDefault    String   @default("id")
   communicationStyle String   @default("ramah, singkat, persuasif, sopan")
   updatedAt          DateTime @updatedAt

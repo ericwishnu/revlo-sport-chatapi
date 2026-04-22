@@ -37,9 +37,9 @@ async function main() {
     where: { sku: 'REV-001' },
     update: {},
     create: {
-      name: 'Shuttlecock Pro X1',
+      name: 'Breeze Shuttlecock',
       description: 'Shuttlecock berkualitas tinggi untuk permainan bulu tangkis profesional.',
-      price: 450000,
+      price: 90000,
       stock: 50,
       sku: 'REV-001',
       isActive: true,

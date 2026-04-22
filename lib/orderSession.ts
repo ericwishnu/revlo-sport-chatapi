@@ -11,6 +11,31 @@ export const PAYMENT_METHODS = [
   'COD (Bayar di Tempat)',
 ]
 
+function parsePaymentMethods(raw: string | null | undefined): string[] {
+  if (!raw) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    return Array.from(
+      new Set(
+        parsed
+          .map((value) => (typeof value === 'string' ? value.trim() : ''))
+          .filter(Boolean)
+      )
+    )
+  } catch {
+    return []
+  }
+}
+
+async function getPaymentMethods(): Promise<string[]> {
+  const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
+  const configured = parsePaymentMethods(settings?.paymentMethodsJson)
+  return configured.length > 0 ? configured : PAYMENT_METHODS
+}
+
 export interface OrderPayload {
   productId?: string
   productName?: string
@@ -158,8 +183,9 @@ async function buildShippingListReply(): Promise<string> {
   ].join('\n')
 }
 
-function buildPaymentListReply(): string {
-  const lines = PAYMENT_METHODS.map((m, i) => `${i + 1}. ${m}`)
+async function buildPaymentListReply(): Promise<string> {
+  const paymentMethods = await getPaymentMethods()
+  const lines = paymentMethods.map((m, i) => `${i + 1}. ${m}`)
   return [
     'Pilih metode pembayaran:',
     '',
@@ -684,17 +710,18 @@ export async function processMessage(
       updatedPayload.shippingMethodName = method.name
       updatedPayload.shippingCost = method.isFree ? 0 : (method.cost ?? 0)
       nextStep = 'select_payment'
-      reply = buildPaymentListReply()
+      reply = await buildPaymentListReply()
       break
     }
 
     case 'select_payment': {
+      const paymentMethods = await getPaymentMethods()
       const idx = parseInt(input, 10)
-      if (isNaN(idx) || idx < 1 || idx > PAYMENT_METHODS.length) {
-        reply = `Pilihan tidak valid. Silakan balas dengan angka 1–${PAYMENT_METHODS.length}.`
+      if (isNaN(idx) || idx < 1 || idx > paymentMethods.length) {
+        reply = `Pilihan tidak valid. Silakan balas dengan angka 1–${paymentMethods.length}.`
         break
       }
-      updatedPayload.paymentMethod = PAYMENT_METHODS[idx - 1]
+      updatedPayload.paymentMethod = paymentMethods[idx - 1]
       nextStep = 'enter_notes'
       reply = NOTES_PROMPT
       break
