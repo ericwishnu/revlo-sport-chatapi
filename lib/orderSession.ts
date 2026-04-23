@@ -1,5 +1,6 @@
 import { db } from './db'
 import { formatCurrency } from './utils'
+import { parseOrderMessage } from './nlpOrderParser'
 
 const SESSION_EXPIRY_HOURS = 24
 const BACK_TO_MENU_HINT = 'Balas *0* untuk kembali ke menu utama.'
@@ -587,6 +588,78 @@ export async function startSession(customerPhone: string): Promise<SessionApiRes
   }
 }
 
+export async function tryNLPOrder(
+  customerPhone: string,
+  message: string
+): Promise<SessionApiResponse | null> {
+  const products = await getActiveProducts()
+  const parsed = parseOrderMessage(message, products)
+
+  if (!parsed.intentDetected || !parsed.productId) {
+    return null
+  }
+
+  const payload: OrderPayload = {
+    productId: parsed.productId,
+    productName: parsed.productName!,
+    productPrice: parsed.productPrice!,
+    hasVariants: parsed.hasVariants,
+  }
+
+  let nextStep = 'select_quantity'
+
+  if (parsed.hasVariants) {
+    if (parsed.variantId) {
+      payload.variantId = parsed.variantId
+      payload.variantName = parsed.variantName
+    } else {
+      nextStep = 'select_variant'
+    }
+  }
+
+  if (nextStep === 'select_quantity' && parsed.quantity !== null && parsed.quantity > 0) {
+    let stockValid = true
+    if (payload.variantId) {
+      const variant = await db.productVariant.findUnique({ where: { id: payload.variantId } })
+      if (variant && variant.stock < parsed.quantity) stockValid = false
+    } else {
+      const product = await db.product.findUnique({ where: { id: payload.productId } })
+      if (product && product.stock !== null && product.stock < parsed.quantity) stockValid = false
+    }
+
+    if (stockValid) {
+      payload.quantity = parsed.quantity
+      nextStep = 'enter_name'
+    }
+  }
+
+  const session = await db.whatsAppOrderSession.create({
+    data: {
+      customerPhone,
+      status: 'DRAFT',
+      currentStep: nextStep,
+      payloadJson: payload as object,
+      expiresAt: sessionExpiry(),
+    },
+  })
+
+  const prompt = await getPromptForStep(nextStep, payload)
+  const itemLabel = payload.variantName
+    ? `${payload.productName} - ${payload.variantName}`
+    : payload.productName
+  const prefix = payload.quantity
+    ? `Baik, Anda ingin memesan ${itemLabel} sebanyak ${payload.quantity}.`
+    : `Baik, Anda ingin memesan ${itemLabel}.`
+
+  return {
+    sessionId: session.id,
+    customerPhone,
+    status: 'collecting',
+    currentStep: nextStep,
+    reply: `${prefix}\n\n${prompt}`,
+  }
+}
+
 export async function processMessage(
   sessionId: string,
   userMessage: string
@@ -614,11 +687,31 @@ export async function processMessage(
     case 'select_product': {
       const products = await getActiveProducts()
       const idx = parseInt(input, 10)
-      if (isNaN(idx) || idx < 1 || idx > products.length) {
-        reply = `Pilihan tidak valid. Silakan balas dengan angka 1–${products.length}.`
+      
+      let product = null
+      let matchedVariant = null
+      let matchedQuantity = null
+
+      if (!isNaN(idx) && idx >= 1 && idx <= products.length) {
+        product = products[idx - 1]
+      } else {
+        const parsed = parseOrderMessage(input, products)
+        if (parsed.productId) {
+          product = products.find((p) => p.id === parsed.productId) || null
+          if (product && parsed.variantId) {
+            matchedVariant = product.variants.find((v) => v.id === parsed.variantId) || null
+          }
+          if (parsed.quantity) {
+            matchedQuantity = parsed.quantity
+          }
+        }
+      }
+
+      if (!product) {
+        reply = `Pilihan tidak valid. Silakan balas dengan angka 1–${products.length} atau sebutkan nama produk.`
         break
       }
-      const product = products[idx - 1]
+
       const activeVariants = product.variants
       updatedPayload = {
         ...updatedPayload,
@@ -626,15 +719,24 @@ export async function processMessage(
         productName: product.name,
         productPrice: product.price,
         hasVariants: activeVariants.length > 0,
-        variantId: null,
-        variantName: null,
+        variantId: matchedVariant ? matchedVariant.id : null,
+        variantName: matchedVariant ? matchedVariant.name : null,
       }
-      if (activeVariants.length > 0) {
+
+      if (activeVariants.length > 0 && !matchedVariant) {
         nextStep = 'select_variant'
         reply = await buildVariantListReply(product.id, product.name)
+      } else if (matchedQuantity && matchedQuantity > 0) {
+        // Assume stock is valid for simplicity in jump, or just let select_quantity handle it next time if it fails here
+        updatedPayload.quantity = matchedQuantity
+        nextStep = 'enter_name'
+        reply = NAME_PROMPT
       } else {
         nextStep = 'select_quantity'
-        reply = buildQuantityPrompt(product.name)
+        const label = matchedVariant 
+          ? `${product.name} - ${matchedVariant.name}` 
+          : product.name
+        reply = buildQuantityPrompt(label)
       }
       break
     }
@@ -645,15 +747,46 @@ export async function processMessage(
         orderBy: { name: 'asc' },
       })
       const idx = parseInt(input, 10)
-      if (isNaN(idx) || idx < 1 || idx > variants.length) {
-        reply = `Pilihan tidak valid. Silakan balas dengan angka 1–${variants.length}.`
+      
+      let variant = null
+      let matchedQuantity = null
+
+      if (!isNaN(idx) && idx >= 1 && idx <= variants.length) {
+        variant = variants[idx - 1]
+      } else {
+        // Fake a product array to reuse matchProductAndVariant or just parse it directly
+        // We'll just re-run parseOrderMessage with a mock product array containing just this product
+        const mockProducts = [{
+          id: updatedPayload.productId,
+          name: updatedPayload.productName,
+          price: updatedPayload.productPrice,
+          variants: variants
+        }]
+        const parsed = parseOrderMessage(input, mockProducts)
+        if (parsed.variantId) {
+          variant = variants.find((v) => v.id === parsed.variantId) || null
+        }
+        if (parsed.quantity) {
+          matchedQuantity = parsed.quantity
+        }
+      }
+
+      if (!variant) {
+        reply = `Pilihan tidak valid. Silakan balas dengan angka 1–${variants.length} atau sebutkan nama varian.`
         break
       }
-      const variant = variants[idx - 1]
+      
       updatedPayload.variantId = variant.id
       updatedPayload.variantName = variant.name
-      nextStep = 'select_quantity'
-      reply = buildQuantityPrompt(`${updatedPayload.productName} - ${variant.name}`)
+      
+      if (matchedQuantity && matchedQuantity > 0) {
+        updatedPayload.quantity = matchedQuantity
+        nextStep = 'enter_name'
+        reply = NAME_PROMPT
+      } else {
+        nextStep = 'select_quantity'
+        reply = buildQuantityPrompt(`${updatedPayload.productName} - ${variant.name}`)
+      }
       break
     }
 

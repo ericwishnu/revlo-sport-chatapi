@@ -11,6 +11,7 @@ import {
   processMessage,
   processMessageByPhone,
   startSession,
+  tryNLPOrder,
 } from '@/lib/orderSession'
 import { db } from '@/lib/db'
 
@@ -153,10 +154,12 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   let parsedCustomerPhone: string | undefined
+  let parsedMessage: string | undefined
 
   try {
     const body = await req.json()
     const data = schema.parse(body)
+    parsedMessage = data.message
 
     let customerPhone = data.customerPhone
     if (!customerPhone && data.sessionId) {
@@ -354,6 +357,17 @@ export async function POST(req: NextRequest) {
       error.message === 'Tidak ada sesi aktif. Silakan mulai sesi baru.'
     ) {
       if (typeof parsedCustomerPhone === 'string' && parsedCustomerPhone.trim()) {
+        try {
+          if (parsedMessage) {
+            const nlpResult = await tryNLPOrder(parsedCustomerPhone, parsedMessage)
+            if (nlpResult) {
+              return NextResponse.json(nlpResult, { status: 200 })
+            }
+          }
+        } catch (nlpErr) {
+          console.error('NLP Order Error:', nlpErr)
+        }
+
         const menuText = await getMainMenuText()
         return NextResponse.json(
           {
