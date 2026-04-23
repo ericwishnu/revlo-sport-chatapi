@@ -2,6 +2,7 @@ import { db } from './db'
 import { formatCurrency } from './utils'
 
 const SESSION_EXPIRY_HOURS = 24
+const BACK_TO_MENU_HINT = 'Balas *0* untuk kembali ke menu utama.'
 
 export const PAYMENT_METHODS = [
   'Transfer BCA',
@@ -139,6 +140,7 @@ async function buildProductListReply(): Promise<string> {
     ...lines,
     '',
     'Balas dengan nomor produk pilihan Anda.',
+    BACK_TO_MENU_HINT,
   ].join('\n')
 }
 
@@ -162,6 +164,7 @@ async function buildVariantListReply(
     ...lines,
     '',
     'Balas dengan nomor pilihan.',
+    BACK_TO_MENU_HINT,
   ].join('\n')
 }
 
@@ -180,6 +183,7 @@ async function buildShippingListReply(): Promise<string> {
     ...lines,
     '',
     'Balas dengan nomor pilihan.',
+    BACK_TO_MENU_HINT,
   ].join('\n')
 }
 
@@ -192,6 +196,7 @@ async function buildPaymentListReply(): Promise<string> {
     ...lines,
     '',
     'Balas dengan nomor pilihan.',
+    BACK_TO_MENU_HINT,
   ].join('\n')
 }
 
@@ -273,6 +278,7 @@ export function buildConfirmationSummary(p: OrderPayload): string {
     '✅ *YA* - Konfirmasi pesanan',
     '✏️ *UBAH* - Ubah data pesanan',
     '❌ *BATAL* - Batalkan pesanan',
+    BACK_TO_MENU_HINT,
   ].join('\n')
 }
 
@@ -298,9 +304,14 @@ function buildEditMenu(hasVariants: boolean): string {
         '7. Catatan',
       ]
 
-  return ['Pilih data yang ingin diubah:', '', ...options, '', 'Balas dengan nomor pilihan.'].join(
-    '\n'
-  )
+  return [
+    'Pilih data yang ingin diubah:',
+    '',
+    ...options,
+    '',
+    'Balas dengan nomor pilihan.',
+    BACK_TO_MENU_HINT,
+  ].join('\n')
 }
 
 function editStepMap(idx: number, hasVariants: boolean): string | null {
@@ -942,7 +953,7 @@ export async function getMainMenuText(): Promise<string> {
 
   if (menuItems.length === 0) {
     return [
-      'Baik, saya kembalikan ke menu utama ya.',
+      'Halo! 👋 Selamat datang di Revlo Sport.',
       '',
       'Ketik *ORDER* untuk mulai memesan produk.',
     ].join('\n')
@@ -950,7 +961,7 @@ export async function getMainMenuText(): Promise<string> {
 
   const lines = menuItems.map((item, i) => `${i + 1}. ${item.title}`)
   return [
-    'Baik, saya kembalikan ke menu utama ya.',
+    'Halo! 👋 Selamat datang di Revlo Sport.',
     '',
     'Silakan pilih menu:',
     '',
@@ -1043,11 +1054,9 @@ function formatInvoiceDate(d: Date): string {
   })
 }
 
-export async function getLatestInvoiceText(customerPhone: string): Promise<string> {
-  let invoice = await db.invoice.findFirst({
-    where: {
-      customerPhone,
-    },
+async function getInvoicesForCustomer(customerPhone: string) {
+  const directInvoices = await db.invoice.findMany({
+    where: { customerPhone },
     include: {
       items: {
         include: {
@@ -1058,58 +1067,64 @@ export async function getLatestInvoiceText(customerPhone: string): Promise<strin
       },
     },
     orderBy: { createdAt: 'desc' },
+    take: 10,
   })
 
-  if (!invoice) {
-    const session = await db.whatsAppOrderSession.findFirst({
-      where: {
-        customerPhone,
-        status: 'CONFIRMED',
-        invoiceId: { not: null },
-      },
-      orderBy: { updatedAt: 'desc' },
-    })
+  if (directInvoices.length > 0) return directInvoices
 
-    if (!session?.invoiceId) {
-      return 'Tidak ada riwayat pesanan.'
-    }
-
-    invoice = await db.invoice.findUnique({
-      where: { id: session.invoiceId },
-      include: {
-        items: {
-          include: {
-            variant: {
-              select: { name: true },
-            },
-          },
-        },
-      },
-    })
-  }
-
-  if (!invoice) {
-    return 'Tidak ada riwayat pesanan.'
-  }
-
-  const session = await db.whatsAppOrderSession.findFirst({
+  const sessions = await db.whatsAppOrderSession.findMany({
     where: {
       customerPhone,
       status: 'CONFIRMED',
-      invoiceId: invoice.id,
+      invoiceId: { not: null },
     },
+    select: { invoiceId: true, updatedAt: true },
     orderBy: { updatedAt: 'desc' },
+    take: 10,
   })
 
-  const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
-  const storeName = settings?.storeName ?? 'Revlo Sport'
-  const bankAccounts = parseBankAccounts(settings?.bankAccountsJson)
-  const payload = (session?.payloadJson ?? {}) as OrderPayload
+  const invoiceIds = Array.from(
+    new Set(
+      sessions
+        .map((session) => session.invoiceId)
+        .filter((invoiceId): invoiceId is string => typeof invoiceId === 'string' && invoiceId.length > 0)
+    )
+  )
 
-  const paymentMethod =
-    payload.paymentMethod ??
-    extractPaymentMethodFromNotes(invoice.notes) ??
-    '-'
+  if (invoiceIds.length === 0) return []
+
+  const fallbackInvoices = await db.invoice.findMany({
+    where: { id: { in: invoiceIds } },
+    include: {
+      items: {
+        include: {
+          variant: {
+            select: { name: true },
+          },
+        },
+      },
+    },
+  })
+
+  const unique: Record<string, (typeof fallbackInvoices)[number]> = {}
+  for (const session of sessions) {
+    const invoice = fallbackInvoices.find((item) => item.id === session.invoiceId)
+    if (invoice) unique[invoice.id] = invoice
+  }
+
+  return Object.values(unique).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
+}
+
+function buildInvoiceDetailText(
+  invoice: any,
+  customerPhone: string,
+  payload: OrderPayload,
+  storeName: string,
+  bankAccounts: StoreBankAccount[]
+): string {
+  const paymentMethod = payload.paymentMethod ?? extractPaymentMethodFromNotes(invoice.notes) ?? '-'
   const shippingMethodName = payload.shippingMethodName ?? 'Pengiriman'
   const shippingAddress = payload.shippingAddress ?? '-'
   const paymentStatusLabel = getPaymentStatusLabel(invoice.paymentStatus)
@@ -1164,8 +1179,113 @@ export async function getLatestInvoiceText(customerPhone: string): Promise<strin
     `Status Pembayaran: ${paymentStatusLabel}`,
     `Status Pesanan: ${orderStatusLabel}`,
     ...transferLines,
-    '',
-    'Ini adalah invoice terbaru Anda.',
     '━━━━━━━━━━━━━━━━━━━━━━━',
   ].join('\n')
+}
+
+export async function getTransactionHistoryList(customerPhone: string): Promise<string> {
+  const invoices = await getInvoicesForCustomer(customerPhone)
+  if (invoices.length === 0) {
+    return ['Tidak ada riwayat pesanan.', BACK_TO_MENU_HINT].join('\n')
+  }
+
+  const lines = invoices.map((invoice, index) => {
+    return `${index + 1}. ${invoice.invoiceNumber} | ${formatInvoiceDate(invoice.createdAt)} | ${formatCurrency(invoice.totalAmount)}`
+  })
+
+  return [
+    '📚 *Riwayat Transaksi Anda*',
+    '',
+    ...lines,
+    '',
+    'Balas *DETAIL 1* untuk melihat detail transaksi.',
+    BACK_TO_MENU_HINT,
+  ].join('\n')
+}
+
+export async function getPaymentStatusList(customerPhone: string): Promise<string> {
+  const invoices = await getInvoicesForCustomer(customerPhone)
+  if (invoices.length === 0) {
+    return ['Tidak ada riwayat pesanan.', BACK_TO_MENU_HINT].join('\n')
+  }
+
+  const lines = invoices.map((invoice, index) => {
+    return `${index + 1}. ${invoice.invoiceNumber} | Bayar: ${getPaymentStatusLabel(invoice.paymentStatus)} | Pesanan: ${getOrderStatusLabel(invoice.orderStatus)}`
+  })
+
+  return [
+    '💳 *Status Pembayaran & Pesanan*',
+    '',
+    ...lines,
+    '',
+    'Balas *STATUS 1* untuk melihat status item tertentu.',
+    BACK_TO_MENU_HINT,
+  ].join('\n')
+}
+
+export async function getInvoiceDetailByIndex(
+  customerPhone: string,
+  index: number
+): Promise<string> {
+  const invoices = await getInvoicesForCustomer(customerPhone)
+  if (invoices.length === 0) {
+    return ['Tidak ada riwayat pesanan.', BACK_TO_MENU_HINT].join('\n')
+  }
+  if (!Number.isInteger(index) || index < 1 || index > invoices.length) {
+    return [
+      `Pilihan tidak valid. Balas DETAIL 1 sampai DETAIL ${invoices.length}.`,
+      BACK_TO_MENU_HINT,
+    ].join('\n')
+  }
+
+  const invoice = invoices[index - 1]
+  const session = await db.whatsAppOrderSession.findFirst({
+    where: {
+      customerPhone,
+      status: 'CONFIRMED',
+      invoiceId: invoice.id,
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  const settings = await db.siteSettings.findUnique({ where: { id: 'singleton' } })
+  const payload = (session?.payloadJson ?? {}) as OrderPayload
+  const storeName = settings?.storeName ?? 'Revlo Sport'
+  const bankAccounts = parseBankAccounts(settings?.bankAccountsJson)
+
+  return buildInvoiceDetailText(invoice, customerPhone, payload, storeName, bankAccounts)
+}
+
+export async function getPaymentStatusByIndex(
+  customerPhone: string,
+  index: number
+): Promise<string> {
+  const invoices = await getInvoicesForCustomer(customerPhone)
+  if (invoices.length === 0) {
+    return ['Tidak ada riwayat pesanan.', BACK_TO_MENU_HINT].join('\n')
+  }
+  if (!Number.isInteger(index) || index < 1 || index > invoices.length) {
+    return [
+      `Pilihan tidak valid. Balas STATUS 1 sampai STATUS ${invoices.length}.`,
+      BACK_TO_MENU_HINT,
+    ].join('\n')
+  }
+
+  const invoice = invoices[index - 1]
+
+  return [
+    `📌 *Status Transaksi ${invoice.invoiceNumber}*`,
+    '',
+    `Tanggal: ${formatInvoiceDate(invoice.createdAt)}`,
+    `Total: ${formatCurrency(invoice.totalAmount)}`,
+    `Status Pembayaran: ${getPaymentStatusLabel(invoice.paymentStatus)}`,
+    `Status Pesanan: ${getOrderStatusLabel(invoice.orderStatus)}`,
+    '',
+    `Balas *DETAIL ${index}* untuk melihat detail invoice ini.`,
+    BACK_TO_MENU_HINT,
+  ].join('\n')
+}
+
+export async function getLatestInvoiceText(customerPhone: string): Promise<string> {
+  return getInvoiceDetailByIndex(customerPhone, 1)
 }

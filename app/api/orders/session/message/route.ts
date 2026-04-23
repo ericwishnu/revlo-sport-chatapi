@@ -3,25 +3,38 @@ import { z } from 'zod'
 import {
   cancelSessionByPhone,
   claimPayment,
-  getLatestInvoiceText,
+  getInvoiceDetailByIndex,
   getMainMenuText,
-  getOrderStatus,
+  getPaymentStatusByIndex,
+  getPaymentStatusList,
+  getTransactionHistoryList,
   processMessage,
   processMessageByPhone,
+  startSession,
 } from '@/lib/orderSession'
 import { db } from '@/lib/db'
 
+const BACK_TO_MENU_HINT = 'Balas *0* untuk kembali ke menu utama.'
+
 // Exact-match keywords for menu/cancel/status/invoice commands
 const GLOBAL_COMMANDS = {
-  MENU: ['menu', 'menu utama', 'home', 'mulai lagi'],
+  MENU: ['0', 'menu', 'menu utama', 'home', 'mulai lagi'],
   CANCEL_ORDER: ['batal pesanan'],
-  ORDER_STATUS: ['status pesanan', 'cek status', 'status transaksi'],
+  ORDER_STATUS: [
+    'status pesanan',
+    'cek status',
+    'status transaksi',
+    'cek status pembayaran',
+    'status pembayaran',
+  ],
   CHECK_INVOICE: [
     'cek invoice',
     'invoice saya',
     'lihat invoice',
     'cek riwayat transaksi',
     'riwayat transaksi',
+    'transaction history',
+    'check transaction history',
     'riwayat invoice',
     'cek riwayat pesanan',
     'riwayat pesanan',
@@ -34,7 +47,18 @@ const GLOBAL_COMMANDS = {
 
 type GlobalCommand = keyof typeof GLOBAL_COMMANDS
 
-type NumericMenuAction = GlobalCommand | 'HANDOFF' | 'STATIC'
+type NumericMenuAction = GlobalCommand | 'HANDOFF' | 'STATIC' | 'START_ORDER'
+
+function detectIndexedCommand(message: string): { type: 'DETAIL' | 'STATUS'; index: number } | null {
+  const normalized = message.toLowerCase().trim()
+  const detail = normalized.match(/^detail\s+(\d+)$/i)
+  if (detail) return { type: 'DETAIL', index: Number(detail[1]) }
+
+  const status = normalized.match(/^status\s+(\d+)$/i)
+  if (status) return { type: 'STATUS', index: Number(status[1]) }
+
+  return null
+}
 
 function detectGlobalCommand(message: string): GlobalCommand | null {
   const normalized = message.toLowerCase().trim()
@@ -85,12 +109,21 @@ async function detectNumericMenuAction(
 
   const menuText = `${menu.title} ${menu.prompt ?? ''} ${menu.content ?? ''}`.toLowerCase()
 
-  if (/(riwayat|invoice|transaksi)/.test(menuText)) {
+  // Prioritize explicit status intents so "status transaksi" does not get routed as history.
+  if (
+    /(status pembayaran|cek status pembayaran|status pesanan|cek status|status transaksi|transaksi berjalan)/.test(
+      menuText
+    )
+  ) {
+    return { action: 'ORDER_STATUS' }
+  }
+
+  if (/(riwayat transaksi|riwayat pesanan|riwayat|invoice|transaction history|history|histori)/.test(menuText)) {
     return { action: 'CHECK_INVOICE' }
   }
 
-  if (/(status|cek status)/.test(menuText)) {
-    return { action: 'ORDER_STATUS' }
+  if (/(produk|order|pesan|pemesanan|beli|belanja)/.test(menuText)) {
+    return { action: 'START_ORDER' }
   }
 
   return null
@@ -119,6 +152,8 @@ const schema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  let parsedCustomerPhone: string | undefined
+
   try {
     const body = await req.json()
     const data = schema.parse(body)
@@ -131,14 +166,35 @@ export async function POST(req: NextRequest) {
       })
       customerPhone = session?.customerPhone
     }
+    parsedCustomerPhone = customerPhone
 
     const normalizedMessage = data.message.toLowerCase().trim()
+    const indexedCommand = detectIndexedCommand(data.message)
+
+    if (indexedCommand && customerPhone) {
+      const reply =
+        indexedCommand.type === 'DETAIL'
+          ? await getInvoiceDetailByIndex(customerPhone, indexedCommand.index)
+          : await getPaymentStatusByIndex(customerPhone, indexedCommand.index)
+
+      return NextResponse.json(
+        {
+          sessionId: data.sessionId ?? null,
+          customerPhone,
+          status: 'collecting',
+          currentStep: 'info',
+          reply,
+        },
+        { status: 200 }
+      )
+    }
+
     const numericMenuAction = await detectNumericMenuAction(data.message)
     if (numericMenuAction && customerPhone) {
       const hasActive = await hasActiveOrderSession(customerPhone)
       if (!hasActive) {
         if (numericMenuAction.action === 'CHECK_INVOICE') {
-          const invoiceText = await getLatestInvoiceText(customerPhone)
+          const invoiceText = await getTransactionHistoryList(customerPhone)
           return NextResponse.json(
             {
               sessionId: data.sessionId ?? null,
@@ -152,7 +208,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (numericMenuAction.action === 'ORDER_STATUS') {
-          const statusText = await getOrderStatus(customerPhone)
+          const statusText = await getPaymentStatusList(customerPhone)
           return NextResponse.json(
             {
               sessionId: data.sessionId ?? null,
@@ -172,7 +228,7 @@ export async function POST(req: NextRequest) {
               customerPhone,
               status: 'collecting',
               currentStep: 'info',
-              reply: numericMenuAction.staticContent,
+              reply: [numericMenuAction.staticContent, BACK_TO_MENU_HINT].filter(Boolean).join('\n\n'),
             },
             { status: 200 }
           )
@@ -186,10 +242,16 @@ export async function POST(req: NextRequest) {
               status: 'collecting',
               currentStep: 'handoff',
               reply:
-                'Baik, saya bantu hubungkan ke admin. Mohon tunggu sebentar, tim kami akan segera merespons ya.',
+                'Baik, saya bantu hubungkan ke admin. Mohon tunggu sebentar, tim kami akan segera merespons ya.\n\n' +
+                BACK_TO_MENU_HINT,
             },
             { status: 200 }
           )
+        }
+
+        if (numericMenuAction.action === 'START_ORDER') {
+          const startOrderResult = await startSession(customerPhone)
+          return NextResponse.json(startOrderResult, { status: 200 })
         }
       }
     }
@@ -236,7 +298,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (globalCmd === 'ORDER_STATUS') {
-        const statusText = await getOrderStatus(customerPhone)
+        const statusText = await getPaymentStatusList(customerPhone)
         return NextResponse.json(
           {
             sessionId: data.sessionId ?? null,
@@ -250,7 +312,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (globalCmd === 'CHECK_INVOICE') {
-        const invoiceText = await getLatestInvoiceText(customerPhone)
+        const invoiceText = await getTransactionHistoryList(customerPhone)
         return NextResponse.json(
           {
             sessionId: data.sessionId ?? null,
@@ -287,6 +349,25 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(result, { status: 200 })
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'Tidak ada sesi aktif. Silakan mulai sesi baru.'
+    ) {
+      if (typeof parsedCustomerPhone === 'string' && parsedCustomerPhone.trim()) {
+        const menuText = await getMainMenuText()
+        return NextResponse.json(
+          {
+            sessionId: null,
+            customerPhone: parsedCustomerPhone,
+            status: 'collecting',
+            currentStep: 'main_menu',
+            reply: menuText,
+          },
+          { status: 200 }
+        )
+      }
+    }
+
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Validasi gagal', details: error.errors }, { status: 400 })
     }

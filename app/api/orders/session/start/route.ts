@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { startSession } from '@/lib/orderSession'
+import { cancelSessionByPhone, getMainMenuText } from '@/lib/orderSession'
 
 const schema = z.object({
   customerPhone: z.string().min(1, 'Nomor HP wajib diisi'),
@@ -10,8 +10,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { customerPhone } = schema.parse(body)
-    const result = await startSession(customerPhone)
-    return NextResponse.json(result, { status: 200 })
+
+    // Reset any unfinished draft so first response always starts from main menu.
+    await cancelSessionByPhone(customerPhone)
+    const menuText = await getMainMenuText()
+
+    return NextResponse.json(
+      {
+        sessionId: null,
+        customerPhone,
+        status: 'collecting',
+        currentStep: 'main_menu',
+        reply: menuText,
+      },
+      { status: 200 }
+    )
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Validasi gagal', details: error.errors }, { status: 400 })

@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import {
-  LayoutDashboard, Package, Tag, Truck, HelpCircle, Settings, Users, LogOut, Bot, FileText, MessageSquare
+  LayoutDashboard, Package, Tag, Truck, HelpCircle, Settings, Users, LogOut, Bot, FileText, MessageSquare, MessageCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +16,7 @@ const navItems = [
   { href: '/faq', label: 'FAQ', icon: HelpCircle },
   { href: '/knowledge-base', label: 'Knowledge Base', icon: Bot },
   { href: '/settings/whatsapp-menu', label: 'Menu WhatsApp', icon: MessageSquare },
+  { href: '/chat-simulator', label: 'Simulasi Chat', icon: MessageCircle },
   { href: '/order-sessions', label: 'Order Session', icon: MessageSquare },
   { href: '/settings', label: 'Pengaturan Toko', icon: Settings, exact: true },
 ]
