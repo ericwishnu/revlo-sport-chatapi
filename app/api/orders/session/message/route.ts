@@ -34,6 +34,8 @@ const GLOBAL_COMMANDS = {
 
 type GlobalCommand = keyof typeof GLOBAL_COMMANDS
 
+type NumericMenuAction = GlobalCommand | 'HANDOFF' | 'STATIC'
+
 function detectGlobalCommand(message: string): GlobalCommand | null {
   const normalized = message.toLowerCase().trim()
 
@@ -47,6 +49,48 @@ function detectGlobalCommand(message: string): GlobalCommand | null {
     if (GLOBAL_COMMANDS[cmd].some((kw) => normalized === kw)) {
       return cmd
     }
+  }
+
+  return null
+}
+
+async function detectNumericMenuAction(
+  message: string
+): Promise<{ action: NumericMenuAction; staticContent?: string } | null> {
+  const normalized = message.toLowerCase().trim()
+  if (!/^\d+$/.test(normalized)) return null
+
+  const menu = await db.whatsappMenu.findFirst({
+    where: { isActive: true, menuKey: normalized },
+    select: {
+      title: true,
+      type: true,
+      prompt: true,
+      content: true,
+    },
+  })
+
+  if (!menu) return null
+
+  if (menu.type === 'STATIC') {
+    return {
+      action: 'STATIC',
+      staticContent: menu.content?.trim() || 'Informasi untuk menu ini belum tersedia.',
+    }
+  }
+
+  if (menu.type === 'HANDOFF') {
+    return { action: 'HANDOFF' }
+  }
+
+  const menuText = `${menu.title} ${menu.prompt ?? ''} ${menu.content ?? ''}`.toLowerCase()
+
+  if (/(riwayat|invoice|transaksi)/.test(menuText)) {
+    return { action: 'CHECK_INVOICE' }
+  }
+
+  if (/(status|cek status)/.test(menuText)) {
+    return { action: 'ORDER_STATUS' }
   }
 
   return null
@@ -88,24 +132,65 @@ export async function POST(req: NextRequest) {
       customerPhone = session?.customerPhone
     }
 
-    // Menu 7 = cek riwayat transaksi/invoice terbaru.
-    // Only handled as global shortcut when customer is not in active order flow.
     const normalizedMessage = data.message.toLowerCase().trim()
-    const isMenuSeven = normalizedMessage === '7' || normalizedMessage === 'menu 7'
-    if (isMenuSeven && customerPhone) {
+    const numericMenuAction = await detectNumericMenuAction(data.message)
+    if (numericMenuAction && customerPhone) {
       const hasActive = await hasActiveOrderSession(customerPhone)
       if (!hasActive) {
-        const invoiceText = await getLatestInvoiceText(customerPhone)
-        return NextResponse.json(
-          {
-            sessionId: data.sessionId ?? null,
-            customerPhone,
-            status: 'collecting',
-            currentStep: 'info',
-            reply: invoiceText,
-          },
-          { status: 200 }
-        )
+        if (numericMenuAction.action === 'CHECK_INVOICE') {
+          const invoiceText = await getLatestInvoiceText(customerPhone)
+          return NextResponse.json(
+            {
+              sessionId: data.sessionId ?? null,
+              customerPhone,
+              status: 'collecting',
+              currentStep: 'info',
+              reply: invoiceText,
+            },
+            { status: 200 }
+          )
+        }
+
+        if (numericMenuAction.action === 'ORDER_STATUS') {
+          const statusText = await getOrderStatus(customerPhone)
+          return NextResponse.json(
+            {
+              sessionId: data.sessionId ?? null,
+              customerPhone,
+              status: 'collecting',
+              currentStep: 'info',
+              reply: statusText,
+            },
+            { status: 200 }
+          )
+        }
+
+        if (numericMenuAction.action === 'STATIC') {
+          return NextResponse.json(
+            {
+              sessionId: data.sessionId ?? null,
+              customerPhone,
+              status: 'collecting',
+              currentStep: 'info',
+              reply: numericMenuAction.staticContent,
+            },
+            { status: 200 }
+          )
+        }
+
+        if (numericMenuAction.action === 'HANDOFF') {
+          return NextResponse.json(
+            {
+              sessionId: data.sessionId ?? null,
+              customerPhone,
+              status: 'collecting',
+              currentStep: 'handoff',
+              reply:
+                'Baik, saya bantu hubungkan ke admin. Mohon tunggu sebentar, tim kami akan segera merespons ya.',
+            },
+            { status: 200 }
+          )
+        }
       }
     }
 
