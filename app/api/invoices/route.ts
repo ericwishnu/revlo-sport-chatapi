@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { sendInvoiceEmail } from '@/lib/email'
+import { sendAutomationWebhook } from '@/lib/automationWebhook'
 import { z } from 'zod'
 
 const itemSchema = z.object({
@@ -138,6 +139,28 @@ export async function POST(req: NextRequest) {
         },
       })
     }
+
+    void sendAutomationWebhook('invoice_created', {
+      customer: { name: data.customerName, phone: data.customerPhone ?? null },
+      order: {
+        invoiceId: invoice.id,
+        invoiceNumber,
+        orderStatus: 'AWAITING_PAYMENT',
+        paymentStatus: 'UNPAID',
+        paymentMethod: null,
+        subtotal,
+        shippingCost: data.shippingCost,
+        total: totalAmount,
+      },
+      items: resolvedItems.map((item) => ({
+        productName: item.name,
+        variantName: null,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.lineTotal,
+      })),
+      meta: { channel: 'dashboard', note: data.notes ?? null },
+    })
 
     return NextResponse.json({ ...invoice, deliveryStatus, deliveryError }, { status: 201 })
   } catch (error) {

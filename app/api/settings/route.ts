@@ -38,6 +38,8 @@ export async function GET() {
     ...settings,
     bankAccounts: parseBankAccounts(settings.bankAccountsJson),
     paymentMethods: parsePaymentMethods(settings.paymentMethodsJson),
+    automationWebhookSecret: undefined,
+    automationSecretIsSet: !!settings.automationWebhookSecret,
   })
 }
 
@@ -55,6 +57,9 @@ export async function PUT(req: NextRequest) {
     communicationStyle,
     bankAccounts,
     paymentMethods,
+    automationWebhookUrl,
+    automationEnabled,
+    automationWebhookSecret,
   } = await req.json()
 
   const normalizedBankAccounts = Array.isArray(bankAccounts)
@@ -77,35 +82,38 @@ export async function PUT(req: NextRequest) {
       )
     : []
 
+  // Only overwrite the secret when a non-empty value is explicitly provided
+  const secretUpdate =
+    typeof automationWebhookSecret === 'string' && automationWebhookSecret.length > 0
+      ? { automationWebhookSecret }
+      : {}
+
+  const sharedData = {
+    storeName,
+    storeDesc,
+    whatsapp,
+    email,
+    address,
+    languageDefault,
+    communicationStyle,
+    bankAccountsJson: JSON.stringify(normalizedBankAccounts),
+    paymentMethodsJson: JSON.stringify(normalizedPaymentMethods),
+    automationWebhookUrl: automationWebhookUrl ?? null,
+    automationEnabled: automationEnabled === true,
+    ...secretUpdate,
+  }
+
   const settings = await db.siteSettings.upsert({
     where: { id: 'singleton' },
-    update: {
-      storeName,
-      storeDesc,
-      whatsapp,
-      email,
-      address,
-      languageDefault,
-      communicationStyle,
-      bankAccountsJson: JSON.stringify(normalizedBankAccounts),
-      paymentMethodsJson: JSON.stringify(normalizedPaymentMethods),
-    },
-    create: {
-      id: 'singleton',
-      storeName,
-      storeDesc,
-      whatsapp,
-      email,
-      address,
-      languageDefault,
-      communicationStyle,
-      bankAccountsJson: JSON.stringify(normalizedBankAccounts),
-      paymentMethodsJson: JSON.stringify(normalizedPaymentMethods),
-    },
+    update: sharedData,
+    create: { id: 'singleton', ...sharedData },
   })
+
   return NextResponse.json({
     ...settings,
     bankAccounts: normalizedBankAccounts,
     paymentMethods: normalizedPaymentMethods,
+    automationWebhookSecret: undefined,
+    automationSecretIsSet: !!settings.automationWebhookSecret,
   })
 }

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Plus, Trash2, Send, Eye, AlertCircle, CheckCircle, X, Search, ChevronDown, ChevronUp
@@ -446,8 +446,8 @@ export default function InvoicesPage() {
           </thead>
           <tbody className="divide-y">
             {invoices.map((inv) => (
-              <>
-                <tr key={inv.id} className="hover:bg-gray-50">
+              <Fragment key={inv.id}>
+                <tr className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
@@ -628,7 +628,7 @@ export default function InvoicesPage() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
             {invoices.length === 0 && (
               <tr>

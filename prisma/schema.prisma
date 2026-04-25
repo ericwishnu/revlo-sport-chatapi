@@ -150,17 +150,20 @@ model Faq {
 }
 
 model SiteSettings {
-  id                 String   @id @default("singleton")
-  storeName          String   @default("Revlo Sport")
-  storeDesc          String?  @db.Text
-  whatsapp           String?
-  email              String?
-  address            String?  @db.Text
-  bankAccountsJson   String?  @db.Text
-  paymentMethodsJson String?  @db.Text
-  languageDefault    String   @default("id")
-  communicationStyle String   @default("ramah, singkat, persuasif, sopan")
-  updatedAt          DateTime @updatedAt
+  id                      String   @id @default("singleton")
+  storeName               String   @default("Revlo Sport")
+  storeDesc               String?  @db.Text
+  whatsapp                String?
+  email                   String?
+  address                 String?  @db.Text
+  bankAccountsJson        String?  @db.Text
+  paymentMethodsJson      String?  @db.Text
+  languageDefault         String   @default("id")
+  communicationStyle      String   @default("ramah, singkat, persuasif, sopan")
+  automationWebhookUrl    String?
+  automationWebhookSecret String?
+  automationEnabled       Boolean  @default(false)
+  updatedAt               DateTime @updatedAt
 }
 
 model WhatsappMenu {

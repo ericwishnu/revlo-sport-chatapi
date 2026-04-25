@@ -1,6 +1,7 @@
 import { db } from './db'
 import { formatCurrency } from './utils'
 import { parseOrderMessage } from './nlpOrderParser'
+import { sendAutomationWebhook, extractPaymentMethod } from './automationWebhook'
 
 const SESSION_EXPIRY_HOURS = 24
 const BACK_TO_MENU_HINT = 'Balas *0* untuk kembali ke menu utama.'
@@ -531,6 +532,31 @@ async function confirmOrder(
   const bankAccounts = parseBankAccounts(settings?.bankAccountsJson)
   const invoiceText = buildInvoiceText(invoiceNumber, customerPhone, payload, storeName, bankAccounts)
 
+  void sendAutomationWebhook('invoice_created', {
+    customer: { name: payload.customerName!, phone: customerPhone },
+    order: {
+      sessionId,
+      invoiceId: invoice.id,
+      invoiceNumber,
+      orderStatus: 'AWAITING_PAYMENT',
+      paymentStatus: 'UNPAID',
+      paymentMethod: payload.paymentMethod ?? null,
+      subtotal,
+      shippingCost,
+      total: totalAmount,
+    },
+    items: [
+      {
+        productName: payload.productName!,
+        variantName: payload.variantName ?? null,
+        quantity: qty,
+        unitPrice,
+        subtotal,
+      },
+    ],
+    meta: { channel: 'whatsapp', note: payload.notes ?? null },
+  })
+
   return {
     sessionId,
     customerPhone,
@@ -916,6 +942,29 @@ export async function processMessage(
       reply = 'Terjadi kesalahan pada sesi. Silakan mulai sesi baru.'
   }
 
+  // --- Fast-forward logic for edits ---
+  // Jika paymentMethod sudah ada, artinya form pernah diselesaikan sampai akhir.
+  if (
+    updatedPayload.paymentMethod &&
+    session.currentStep !== 'select_edit_field' &&
+    session.currentStep !== 'awaiting_confirmation'
+  ) {
+    const fastForwardTriggers = [
+      'enter_name',
+      'enter_address',
+      'select_shipping',
+      'select_payment',
+      'enter_notes',
+    ]
+
+    if (fastForwardTriggers.includes(nextStep)) {
+      nextStep = 'awaiting_confirmation'
+      newStatus = 'AWAITING_CONFIRMATION'
+      reply = buildConfirmationSummary(updatedPayload)
+    }
+  }
+  // --- End of Fast-forward logic ---
+
   await db.whatsAppOrderSession.update({
     where: { id: sessionId },
     data: {
@@ -976,7 +1025,10 @@ export async function claimPayment(
 
   if (!invoiceId) throw new Error('Invoice tidak ditemukan untuk pesanan ini')
 
-  const invoice = await db.invoice.findUnique({ where: { id: invoiceId } })
+  const invoice = await db.invoice.findUnique({
+    where: { id: invoiceId },
+    include: { items: true },
+  })
   if (!invoice) throw new Error('Invoice tidak ditemukan')
 
   if (invoice.paymentStatus === 'PAID') {
@@ -1006,6 +1058,28 @@ export async function claimPayment(
       paymentClaimNote: claimNote,
       orderStatus: 'AWAITING_VERIFICATION',
     },
+  })
+
+  void sendAutomationWebhook('payment_claimed', {
+    customer: { name: invoice.customerName, phone: invoice.customerPhone ?? null },
+    order: {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      orderStatus: 'AWAITING_VERIFICATION',
+      paymentStatus: 'UNPAID',
+      paymentMethod: extractPaymentMethod(invoice.notes),
+      subtotal: invoice.subtotal,
+      shippingCost: invoice.shippingCost,
+      total: invoice.totalAmount,
+    },
+    items: invoice.items.map((item) => ({
+      productName: item.name,
+      variantName: null,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.lineTotal,
+    })),
+    meta: { channel: 'whatsapp', note: claimNote },
   })
 
   const dateStr = claimedAt.toLocaleDateString('id-ID', {

@@ -16,12 +16,16 @@ const emptyForm = {
   address: '',
   bankAccounts: [] as BankAccount[],
   paymentMethods: [] as string[],
+  automationWebhookUrl: '',
+  automationEnabled: false,
+  automationWebhookSecret: '',
 }
 
 export default function SettingsPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [secretIsSet, setSecretIsSet] = useState(false)
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => {
@@ -33,7 +37,11 @@ export default function SettingsPage() {
         address: d.address ?? '',
         bankAccounts: Array.isArray(d.bankAccounts) ? d.bankAccounts : [],
         paymentMethods: Array.isArray(d.paymentMethods) ? d.paymentMethods : [],
+        automationWebhookUrl: d.automationWebhookUrl ?? '',
+        automationEnabled: d.automationEnabled ?? false,
+        automationWebhookSecret: '',
       })
+      setSecretIsSet(d.automationSecretIsSet ?? false)
     })
   }, [])
 
@@ -229,6 +237,51 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
+        <div className="border-t pt-5 space-y-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Integrasi Automation (n8n)</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Kirim event ke n8n saat order dibuat, pembayaran diklaim, dll.</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="automationEnabled"
+              checked={form.automationEnabled}
+              onChange={e => setForm(f => ({ ...f, automationEnabled: e.target.checked }))}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600"
+            />
+            <label htmlFor="automationEnabled" className="text-sm font-medium text-gray-700">
+              Aktifkan automation webhook
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">URL Webhook n8n</label>
+            <input
+              type="url"
+              placeholder="https://n8n.example.com/webhook/..."
+              value={form.automationWebhookUrl}
+              onChange={e => setForm(f => ({ ...f, automationWebhookUrl: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Webhook Secret</label>
+            {secretIsSet && (
+              <p className="text-xs text-gray-500 mb-1">Secret sudah tersimpan. Isi field ini hanya jika ingin menggantinya.</p>
+            )}
+            <input
+              type="password"
+              placeholder={secretIsSet ? '••••••••' : 'Opsional — untuk verifikasi request dari Revlo di sisi n8n'}
+              value={form.automationWebhookSecret}
+              onChange={e => setForm(f => ({ ...f, automationWebhookSecret: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
         <div className="flex items-center gap-3">
           <button type="submit" disabled={saving}
             className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
